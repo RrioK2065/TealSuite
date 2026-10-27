@@ -62,7 +62,7 @@ namespace TealSuite.Hub
         }
     }
 
-    /// <summary>1 アプリぶんのカード</summary>
+    /// <summary>1 アプリぶんのカード (名前・説明・設定の要約 / 状態・設定・起動・終了)</summary>
     public class AppCard : CardPanel
     {
         public readonly AppEntry App;
@@ -73,116 +73,46 @@ namespace TealSuite.Hub
         readonly Label version = new Label();
         readonly Label role = new Label();
         readonly Label desc = new Label();
+        /// <summary>「ショートカット: Alt + V ・ 常駐: オン ・ スタートアップ: オフ」</summary>
+        readonly Label summary = new Label();
         public readonly StatusPill Pill = new StatusPill();
+        public readonly FlatButton BtnSettings = MainForm.GearButton();
         public readonly FlatButton BtnStart = new FlatButton("起動", ButtonKind.Primary);
         public readonly FlatButton BtnStop = new FlatButton("終了", ButtonKind.Secondary);
-        /// <summary>Windows の起動時に自動で起動するか (HKCU の Run キー)</summary>
-        public readonly ToggleSwitch StartupSwitch = new ToggleSwitch("スタートアップ");
-        /// <summary>登録先が違う / タスク マネージャーで無効のときに出す「登録し直す」</summary>
-        public readonly FlatButton StartupFix = new FlatButton("登録し直す", ButtonKind.Secondary);
-        /// <summary>利用者がトグルを切り替えたとき (プログラムからの変更では発生しない)</summary>
-        public event EventHandler StartupToggled;
-        public StartupState StartupInfo = new StartupState();
         readonly ToolTip tip = new ToolTip();
-        /// <summary>ショートカットの行 (「履歴を呼び出す [Ctrl + Shift + V] 変更 解除」)</summary>
-        readonly FlowLayoutPanel keys = new FlowLayoutPanel();
-        public readonly List<ShortcutChip> Chips = new List<ShortcutChip>();
-        public event Action<ShortcutSlot> ShortcutEdit, ShortcutClear;
-        bool updatingStartup;
-        string startupKey;
+        public string SummaryText { get { return summary.Text; } }
+        public Color SummaryColor { get { return summary.ForeColor; } }
 
         public AppCard(AppEntry app)
         {
             App = app;
-            Height = Theme.S(88);
+            Height = Theme.S(100);
             Padding = Theme.P(0);
             icon.Size = new Size(Theme.S(44), Theme.S(44));
             icon.SizeMode = PictureBoxSizeMode.Zoom;
             icon.BackColor = Theme.Surface;
-            icon.Image = LoadIcon(app);
+            icon.Image = LoadIcon(app, Theme.S(44));
             name.Text = app.Name; name.Font = Theme.Title; name.ForeColor = Theme.Text; name.AutoSize = true; name.UseMnemonic = false; name.BackColor = Theme.Surface;
             role.Text = app.Role ?? ""; role.Font = Theme.Small; role.ForeColor = Theme.Accent; role.AutoSize = true; role.UseMnemonic = false; role.BackColor = Theme.Surface; role.Visible = role.Text.Length > 0;
             version.Text = string.IsNullOrEmpty(app.Version) ? "" : "v" + app.Version; version.Font = Theme.Small; version.ForeColor = Theme.SubText; version.AutoSize = true; version.BackColor = Theme.Surface;
             desc.Text = app.Description ?? ""; desc.Font = Theme.Small; desc.ForeColor = Theme.SubText; desc.AutoSize = false; desc.AutoEllipsis = true; desc.UseMnemonic = false; desc.BackColor = Theme.Surface;
+            summary.Font = Theme.Small; summary.ForeColor = Theme.SubText; summary.AutoSize = false; summary.AutoEllipsis = true; summary.UseMnemonic = false; summary.BackColor = Theme.Surface;
             BtnStart.FitWidth(76); BtnStop.FitWidth(76);
-            StartupSwitch.AutoSize = false; StartupSwitch.Size = StartupSwitch.GetPreferredSize(Size.Empty); StartupSwitch.Margin = Padding.Empty;
-            StartupSwitch.CheckedChanged += (s, e) => { if (!updatingStartup && StartupToggled != null) StartupToggled(this, EventArgs.Empty); };
-            StartupFix.Font = Theme.Small; StartupFix.Visible = false; StartupFix.FitWidth(76); StartupFix.Height = Theme.S(24);
-            keys.WrapContents = false; keys.AutoSize = false; keys.BackColor = Theme.Surface; keys.Margin = Padding.Empty; keys.Padding = Padding.Empty; keys.Visible = false;
-            Controls.AddRange(new Control[] { icon, name, role, version, desc, keys, StartupFix, Pill, StartupSwitch, BtnStart, BtnStop });
-            tip.SetToolTip(icon, app.ExePath); tip.SetToolTip(name, app.ExePath);
-            tip.SetToolTip(StartupSwitch, "オンにすると、Windows にサインインしたときに " + app.Name + " を自動で起動します");
+            Controls.AddRange(new Control[] { icon, name, role, version, desc, summary, Pill, BtnSettings, BtnStart, BtnStop });
+            tip.SetToolTip(icon, app.ExePath); tip.SetToolTip(name, app.ExePath); tip.SetToolTip(desc, app.Description ?? "");
+            tip.SetToolTip(BtnSettings, app.Name + " のショートカット・常駐・スタートアップを設定します");
         }
 
-        /// <summary>ショートカットの行を作り直す (mgr が null なら行を出さない)</summary>
-        public void SetShortcuts(IEnumerable<ShortcutSlot> slots, HubShortcuts mgr)
+        /// <summary>設定の要約を表示する (problem: 色)</summary>
+        public void SetSummary(string text, Color color)
         {
-            keys.SuspendLayout();
-            foreach (var c in Chips) c.Dispose();
-            Chips.Clear(); keys.Controls.Clear();
-            if (mgr != null)
-                foreach (var sl in slots)
-                {
-                    var chip = new ShortcutChip(sl, mgr, tip);
-                    chip.EditRequested += x => { if (ShortcutEdit != null) ShortcutEdit(x); };
-                    chip.ClearRequested += x => { if (ShortcutClear != null) ShortcutClear(x); };
-                    Chips.Add(chip); keys.Controls.Add(chip);
-                }
-            keys.Visible = Chips.Count > 0;
-            keys.ResumeLayout();
-            Height = Theme.S(keys.Visible ? 112 : 88);
-            PerformLayout();
+            if (summary.Text == text && summary.ForeColor == color) return;
+            summary.Text = text; summary.ForeColor = color;
+            tip.SetToolTip(summary, text + "\n(「設定」で変更できます)");
         }
 
-        /// <summary>ショートカットの値・重複の表示だけを更新する</summary>
-        public void RefreshShortcuts(HubShortcuts mgr)
+        public static Image LoadIcon(AppEntry app, int px)
         {
-            foreach (var c in Chips) c.Refresh_(mgr, tip);
-        }
-
-        /// <summary>スタートアップの状態を表示に反映する (トグルのイベントは発生させない)</summary>
-        public void ApplyStartup(StartupState st)
-        {
-            StartupInfo = st ?? new StartupState();
-            bool missing = !File.Exists(App.ExePath);
-            string key = StartupInfo.Status + "|" + StartupInfo.Command + "|" + missing;
-            if (key == startupKey) return;   // 変化がなければ何もしない (ちらつき防止)
-            startupKey = key;
-            updatingStartup = true;
-            try
-            {
-                StartupSwitch.Checked = StartupInfo.Registered;
-                StartupSwitch.Enabled = !(missing && !StartupInfo.Registered);   // exe がなければオンにできない (オフにはできる)
-            }
-            finally { updatingStartup = false; }
-            switch (StartupInfo.Status)
-            {
-                case StartupStatus.PathMismatch:
-                    desc.Text = "登録先が違います: " + Startup.ShortPath(StartupInfo.RegisteredPath, 30);
-                    desc.ForeColor = Theme.Danger;
-                    StartupFix.Text = "登録し直す";
-                    StartupFix.Visible = !missing;
-                    break;
-                case StartupStatus.DisabledByUser:
-                    desc.Text = "スタートアップはタスク マネージャーで無効になっています";
-                    desc.ForeColor = Theme.Warning;
-                    StartupFix.Text = "有効に戻す";
-                    StartupFix.Visible = !missing;
-                    break;
-                default:
-                    desc.Text = App.Description ?? "";
-                    desc.ForeColor = Theme.SubText;
-                    StartupFix.Visible = false;
-                    break;
-            }
-            tip.SetToolTip(desc, StartupInfo.Command == null ? desc.Text : "登録内容: " + StartupInfo.Command);
-            PerformLayout();
-            Invalidate(true);
-        }
-
-        static Image LoadIcon(AppEntry app)
-        {
-            int px = Theme.S(44);
             Bitmap b = null;
             if (app.IconPath != null && File.Exists(app.IconPath)) b = Theme.BitmapFromIconFile(app.IconPath, px);
             if (b == null && File.Exists(app.ExePath) && AppInfo.IsWindows) b = Theme.BitmapFromIconFile(app.ExePath, px);
@@ -196,29 +126,18 @@ namespace TealSuite.Hub
             icon.Location = new Point(pad, (Height - icon.Height) / 2);
             int right = Width - pad;
             BtnStop.Location = new Point(right - BtnStop.Width, (Height - BtnStop.Height) / 2); right = BtnStop.Left - gap;
-            BtnStart.Location = new Point(right - BtnStart.Width, (Height - BtnStart.Height) / 2); right = BtnStart.Left - Theme.S(14);
-            // 状態ピルとスタートアップのトグルを縦に並べる
-            int colW = Math.Max(Pill.Width, StartupSwitch.Width);
-            int blockH = Pill.Height + Theme.S(6) + StartupSwitch.Height;
-            int colTop = (Height - blockH) / 2;
-            Pill.Location = new Point(right - colW, colTop);
-            StartupSwitch.Location = new Point(right - colW, Pill.Bottom + Theme.S(6));
-            right = right - colW - Theme.S(12);
+            BtnStart.Location = new Point(right - BtnStart.Width, (Height - BtnStart.Height) / 2); right = BtnStart.Left - gap;
+            BtnSettings.Location = new Point(right - BtnSettings.Width, (Height - BtnSettings.Height) / 2); right = BtnSettings.Left - Theme.S(12);
+            Pill.Location = new Point(right - Pill.Width, (Height - Pill.Height) / 2); right = Pill.Left - Theme.S(12);
             int x = icon.Right + Theme.S(14);
-            int keysH = keys.Visible ? Theme.S(22) + Theme.S(10) : 0;
-            int top = (Height - (name.PreferredHeight + Theme.S(4) + desc.Font.Height + keysH)) / 2;
+            int line = desc.Font.Height + 2;
+            int top = (Height - (name.PreferredHeight + Theme.S(4) + line * 2 + Theme.S(2))) / 2;
             name.Location = new Point(x, top);
             int after = name.Right + Theme.S(8);
             if (role.Visible) { role.Location = new Point(after, top + name.PreferredHeight - role.PreferredHeight - 1); after = role.Right + Theme.S(6); }
             version.Location = new Point(after, top + name.PreferredHeight - version.PreferredHeight - 1);
-            int descRight = right;
-            if (StartupFix.Visible)
-            {
-                StartupFix.Location = new Point(right - StartupFix.Width, name.Bottom + Theme.S(4) + (desc.Font.Height + 2 - StartupFix.Height) / 2);
-                descRight = StartupFix.Left - Theme.S(6);
-            }
-            desc.Bounds = new Rectangle(x, name.Bottom + Theme.S(4), Math.Max(10, descRight - x), desc.Font.Height + 2);
-            if (keys.Visible) keys.Bounds = new Rectangle(x, desc.Bottom + Theme.S(8), Math.Max(10, right - x), Theme.S(22));
+            desc.Bounds = new Rectangle(x, name.Bottom + Theme.S(4), Math.Max(10, right - x), line);
+            summary.Bounds = new Rectangle(x, desc.Bottom + Theme.S(2), Math.Max(10, right - x), line);
         }
 
         public void Apply(AppStatus s, string busyText = null)
@@ -283,38 +202,34 @@ namespace TealSuite.Hub
         }
     }
 
-    /// <summary>ヘッダーの下の帯: 「Teal Hub」 スタートアップ / 開くショートカット … 再読み込み</summary>
+    /// <summary>ヘッダーの下の帯: 「Teal Hub」 設定の要約 … 設定 再読み込み</summary>
     public class SelfBar : Panel
     {
-        readonly FlowLayoutPanel left = new FlowLayoutPanel(), right = new FlowLayoutPanel();
+        readonly Label lbl = new Label(), summary = new Label();
+        public readonly FlatButton BtnSettings = MainForm.GearButton();
+        public readonly FlatButton BtnReload = new FlatButton("再読み込み", ButtonKind.Ghost);
+        public string SummaryText { get { return summary.Text; } }
         public SelfBar()
         {
-            Dock = DockStyle.Top; Height = Theme.S(40); BackColor = Theme.Surface;
+            Dock = DockStyle.Top; Height = Theme.S(44); BackColor = Theme.Surface;
             Padding = new Padding(Theme.S(16), 0, Theme.S(10), 1);
-            foreach (var f in new[] { left, right })
-            {
-                f.WrapContents = false; f.AutoSize = true; f.AutoSizeMode = AutoSizeMode.GrowAndShrink; f.BackColor = Theme.Surface; f.Padding = Padding.Empty; f.Margin = Padding.Empty;
-            }
-            right.FlowDirection = FlowDirection.RightToLeft;
-            var lbl = new Label { Text = "Teal Hub", Font = Theme.Bold, ForeColor = Theme.Text, AutoSize = true, UseMnemonic = false, Margin = new Padding(0, Theme.S(2), Theme.S(14), 0) };
-            left.Controls.Add(lbl);
-            Controls.Add(left); Controls.Add(right);
+            lbl.Text = "Teal Hub"; lbl.Font = Theme.Bold; lbl.ForeColor = Theme.Text; lbl.AutoSize = true; lbl.UseMnemonic = false; lbl.BackColor = Theme.Surface;
+            summary.Font = Theme.Small; summary.ForeColor = Theme.SubText; summary.AutoSize = false; summary.AutoEllipsis = true; summary.UseMnemonic = false; summary.BackColor = Theme.Surface;
+            BtnReload.FitWidth(72);
+            Controls.AddRange(new Control[] { lbl, summary, BtnSettings, BtnReload });
         }
-        public void Add(Control c, bool atRight)
-        {
-            c.Margin = new Padding(0, 0, Theme.S(18), 0);
-            (atRight ? right : left).Controls.Add(c);
-            PerformLayout();
-        }
-        public void Remove(Control c) { left.Controls.Remove(c); right.Controls.Remove(c); }
+        public void SetSummary(string text, Color color) { if (summary.Text != text) summary.Text = text; summary.ForeColor = color; }
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
-            if (right == null) return;
-            int h = Height - 1;
-            foreach (Control c in left.Controls) c.Margin = new Padding(c.Margin.Left, Math.Max(0, (Theme.S(26) - c.PreferredSize.Height) / 2), c.Margin.Right, 0);
-            left.Location = new Point(Padding.Left, (h - left.Height) / 2);
-            right.Location = new Point(Width - Padding.Right - right.Width, (h - right.Height) / 2);
+            if (BtnReload == null) return;
+            int h = Height - 1, gap = Theme.S(8);
+            BtnReload.Location = new Point(Width - Padding.Right - BtnReload.Width, (h - BtnReload.Height) / 2);
+            BtnSettings.Location = new Point(BtnReload.Left - gap - BtnSettings.Width, (h - BtnSettings.Height) / 2);
+            lbl.Location = new Point(Padding.Left, (h - lbl.PreferredHeight) / 2);
+            int x = lbl.Left + lbl.PreferredWidth + Theme.S(14);
+            int sh = summary.Font.Height + 2;
+            summary.Bounds = new Rectangle(x, (h - sh) / 2, Math.Max(10, BtnSettings.Left - Theme.S(12) - x), sh);
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -326,22 +241,23 @@ namespace TealSuite.Hub
     public class MainForm : Form
     {
         const int StopTimeoutMs = 5000;
+        /// <summary>ショートカットでの起動を、続けて押しても 1 回にする間隔</summary>
+        public const int LaunchDebounceMs = 2000;
         readonly ProcessControl ctl = new ProcessControl();
         readonly FlowLayoutPanel listPanel = new FlowLayoutPanel();
         readonly FooterBar footer = new FooterBar();
         readonly Timer timer = new Timer();
         readonly Label empty = new Label();
         readonly FlatButton btnStopAll;
-        /// <summary>Teal Hub 自身のスタートアップ (ヘッダー)</summary>
-        readonly ToggleSwitch selfStartup = new ToggleSwitch("スタートアップ");
         /// <summary>登録先の違い・古い自動起動などのお知らせ</summary>
         readonly FlowLayoutPanel notices = new FlowLayoutPanel();
         readonly ToolTip tips = new ToolTip();
-        bool updatingSelf;
         StartupState selfState = new StartupState();
+        readonly Dictionary<string, StartupState> appStartup = new Dictionary<string, StartupState>(StringComparer.OrdinalIgnoreCase);
         List<AppEntry> allApps = new List<AppEntry>();   // Teal Hub 自身も含む (古い自動起動の判定用)
         List<LegacyStartupItem> legacy = new List<LegacyStartupItem>();
         readonly HashSet<string> dismissed = new HashSet<string>();
+        readonly Dictionary<string, DateTime> lastLaunch = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         string noticesKey;
         DateTime lastLegacyScan = DateTime.MinValue;
         List<AppEntry> apps = new List<AppEntry>();
@@ -350,11 +266,9 @@ namespace TealSuite.Hub
         readonly HubShortcuts shortcuts;
         readonly HeaderBar header;
         readonly SelfBar selfBar;
-        ShortcutChip selfChip;
-        readonly FlatButton btnShortcuts, btnUpdate;
+        readonly AppSettingsPage page;
+        readonly FlatButton btnUpdate;
         readonly ContextMenuStrip updateMenu = new ContextMenuStrip();
-        ShortcutListForm listForm;
-        HotkeySettingsForm editForm;
         bool loaded, allowClose;
         string suiteVersion;
         HubUpdates updates;
@@ -367,14 +281,20 @@ namespace TealSuite.Hub
         public event Action HideRequested;
         /// <summary>アップデート ファイルが選ばれた・ドロップされたとき (null なら UpdaterLauncher で開く)</summary>
         public Action<string> UpdateFileChosen;
+        /// <summary>テスト用: 今の時刻 (連打の判定)</summary>
+        public Func<DateTime> Now = () => DateTime.Now;
         public HubShortcuts Shortcuts { get { return shortcuts; } }
-        public ShortcutListForm ListForm { get { return listForm != null && !listForm.IsDisposed ? listForm : null; } }
-        public HotkeySettingsForm EditForm { get { return editForm != null && !editForm.IsDisposed ? editForm : null; } }
         public string SuiteVersion { get { return suiteVersion; } }
         public string UpdateButtonLabel { get { return btnUpdate.Text; } }
         public ContextMenuStrip UpdateMenu { get { return updateMenu; } }
         /// <summary>お知らせの帯 (テスト用)</summary>
-        public System.Collections.Generic.IEnumerable<NoticeBar> NoticeBars { get { return notices.Controls.OfType<NoticeBar>(); } }
+        public IEnumerable<NoticeBar> NoticeBars { get { return notices.Controls.OfType<NoticeBar>(); } }
+        public SelfBar SelfBar_ { get { return selfBar; } }
+        public HeaderBar Header { get { return header; } }
+        /// <summary>設定ページ (表示中かどうかは IsSettingsShown)</summary>
+        public AppSettingsPage SettingsPage { get { return page; } }
+        public bool IsSettingsShown { get { return settingsShown; } }
+        bool settingsShown;
 
         /// <summary>オンラインのアップデート確認 (HubTray が設定する。null なら出さない)</summary>
         public HubUpdates Updates
@@ -389,50 +309,52 @@ namespace TealSuite.Hub
         }
         public string FooterText { get { return footer.StatusText; } }
         public string HeaderSubtitle { get { return header.Subtitle; } }
+        public void SetStatus(string text) { footer.StatusText = text; }
 
         public ProcessControl Control_ { get { return ctl; } }
         public IList<AppCard> Cards { get { return cards; } }
-        public ToggleSwitch SelfStartup { get { return selfStartup; } }
+        public IList<AppEntry> Apps { get { return apps; } }
         public IList<LegacyStartupItem> LegacyItems { get { return legacy; } }
         /// <summary>古い自動起動を退避するフォルダ (削除はしない)</summary>
         public static string RemovedStartupDir { get { return Path.Combine(DataStore.AppDir, "removed-startup"); } }
         /// <summary>表示中のお知らせの数 (テスト用)</summary>
         public int NoticeCount { get { return notices.Controls.Count; } }
+        /// <summary>Teal Hub 以外で、スタートアップがオンのアプリがあるか</summary>
+        public bool AnyAppStartupOn { get { return appStartup.Values.Any(x => x.Registered); } }
+
+        /// <summary>ティール色の歯車つき「設定」ボタン</summary>
+        public static FlatButton GearButton()
+        {
+            var b = new FlatButton("設定", ButtonKind.Secondary);
+            b.Image = GearIcon.Get(Theme.S(16), Theme.Accent);
+            b.FitWidth(72);
+            return b;
+        }
 
         public MainForm() : this(null) { }
 
-        /// <param name="shortcuts">全アプリのショートカット (null なら出さない)</param>
+        /// <param name="shortcuts">全アプリのショートカット (null ならショートカットなし)</param>
         public MainForm(HubShortcuts shortcuts)
         {
-            this.shortcuts = shortcuts;
+            this.shortcuts = shortcuts ?? new HubShortcuts();
             Theme.ApplyForm(this);
             Text = AppInfo.WindowTitle;
-            MinimumSize = Theme.S(640, 400);
+            MinimumSize = Theme.S(640, 420);
 
             header = HeaderBar.ForApp("TealSuite " + AppInfo.Version);
             btnStopAll = header.AddAction(new FlatButton("すべて終了", ButtonKind.Danger)).FitWidth(88);
             btnUpdate = header.AddAction(new FlatButton(UpdateButtonText, ButtonKind.Secondary)).FitWidth(112);
-            btnShortcuts = header.AddAction(new FlatButton("ショートカット一覧", ButtonKind.Secondary)).FitWidth(96);
-            btnShortcuts.Visible = shortcuts != null;
-            // ヘッダーの下: Teal Hub 自身の設定 (スタートアップ・開くショートカット) と再読み込み
+            // ヘッダーの下: Teal Hub 自身の設定の要約・設定ボタン・再読み込み
             selfBar = new SelfBar();
-            var btnReload = new FlatButton("再読み込み", ButtonKind.Ghost);
-            btnReload.Font = Theme.Small; btnReload.FitWidth(72);
-            selfBar.Add(selfStartup, false);
-            selfBar.Add(btnReload, true);
+            selfBar.BtnSettings.Click += (s, e) => ShowSettings(null);
+            selfBar.BtnReload.Click += (s, e) => LoadManifest();
+            tips.SetToolTip(selfBar.BtnSettings, "Teal Hub のショートカットとスタートアップを設定します");
+            tips.SetToolTip(selfBar.BtnReload, "apps.json を読み直します (F5)");
             updateMenu.Font = Theme.Body; updateMenu.ShowImageMargin = false;
             BuildUpdateMenu();
             btnUpdate.Click += (s, e) => { BuildUpdateMenu(); updateMenu.Show(btnUpdate, new Point(0, btnUpdate.Height)); };
-            btnShortcuts.Click += (s, e) => ShowShortcutList();
             tips.SetToolTip(btnUpdate, "新しいバージョンの確認と、アップデート ファイル (.tealupdate) での更新。\nファイルをこの画面にドラッグしても始められます");
-            tips.SetToolTip(btnShortcuts, "すべてのアプリのショートカットを一覧で確認・変更します");
-            selfStartup.CheckedChanged += (s, e) => { if (!updatingSelf) SetSelfStartup(selfStartup.Checked); };
             btnStopAll.Click += (s, e) => StopAll();
-            btnReload.Click += (s, e) => LoadManifest();
-            tips.SetToolTip(selfStartup, shortcuts != null
-                ? "オンにすると、Windows にサインインしたときに Teal Hub を通知領域で起動します。\nTeal Hub のショートカット (Alt + H など) は、Teal Hub が起動している間だけ使えます"
-                : "オンにすると、Windows にサインインしたときに Teal Hub を自動で起動します");
-            tips.SetToolTip(btnReload, "apps.json を読み直します (F5)");
             tips.SetToolTip(btnStopAll, "実行中のアプリをすべて終了します");
 
             listPanel.Dock = DockStyle.Fill;
@@ -456,9 +378,13 @@ namespace TealSuite.Hub
             notices.Visible = false;
             Resize += (s, e) => FitNotices();
 
+            page = new AppSettingsPage(this, this.shortcuts);
+            page.BackRequested += () => ShowList();
+
             Controls.Add(listPanel);
             Controls.Add(empty);
             Controls.Add(notices);
+            Controls.Add(page);
             Controls.Add(footer);
             Controls.Add(selfBar);
             Controls.Add(header);
@@ -466,10 +392,11 @@ namespace TealSuite.Hub
             AllowDrop = true;
             DragEnter += (s, e) => { e.Effect = DroppedUpdate(e.Data) != null ? DragDropEffects.Copy : DragDropEffects.None; };
             DragDrop += (s, e) => { var f = DroppedUpdate(e.Data); if (f != null) BeginInvoke((Action)(() => OpenUpdateFile(f))); };
-            if (shortcuts != null) shortcuts.Changed += () => { if (!IsDisposed) RefreshShortcutViews(); };
+            this.shortcuts.Changed += () => { if (!IsDisposed) RefreshStatus(); };
+            if (this.shortcuts.TriggerApp == null) this.shortcuts.TriggerApp = a => TriggerApp(a);
 
             KeyPreview = true;
-            KeyDown += (s, e) => { if (e.KeyCode == Keys.F5) { LoadManifest(); e.Handled = true; } };
+            KeyDown += (s, e) => { if (e.KeyCode == Keys.F5 && !page.Box_Focused()) { LoadManifest(); e.Handled = true; } };
 
             WindowMemory.Attach(this, 860, 640);
             timer.Interval = 1500;
@@ -478,6 +405,16 @@ namespace TealSuite.Hub
             // ほかの場所でショートカットを置いたりしたときに備え、画面に戻ってきたら古い自動起動を探し直す
             Activated += (s, e) => { if ((DateTime.Now - lastLegacyScan).TotalSeconds > 5) ScanLegacy(); };
             FormClosed += (s, e) => timer.Stop();
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Escape && settingsShown)
+            {
+                if (page.Box_Focused()) page.CancelCapture(); else ShowList();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
         }
 
         public void LoadManifest()
@@ -498,76 +435,172 @@ namespace TealSuite.Hub
             foreach (var a in apps)
             {
                 var card = new AppCard(a) { Margin = new Padding(0, 0, 0, Theme.S(10)) };
-                card.BtnStart.Click += (s, e) => StartOrShow(card);
+                card.BtnStart.Click += (s, e) => StartOrShow(card, null);
                 card.BtnStop.Click += (s, e) => StopApp(card, true);
-                card.StartupToggled += (s, e) => SetAppStartup(card, card.StartupSwitch.Checked);
-                card.StartupFix.Click += (s, e) => SetAppStartup(card, true);
-                card.ShortcutEdit += x => EditShortcut(x);
-                card.ShortcutClear += x => ClearShortcut(x, true);
+                card.BtnSettings.Click += (s, e) => ShowSettings(card.App.Id);
                 cards.Add(card);
                 listPanel.Controls.Add(card);
             }
-            if (shortcuts != null)
-            {
-                shortcuts.Load(apps);
-                foreach (var c in cards) c.SetShortcuts(shortcuts.For(c.App.Id), shortcuts);
-                if (selfChip != null) { selfBar.Remove(selfChip); selfChip.Dispose(); selfChip = null; }
-                if (shortcuts.Self != null)
-                {
-                    selfChip = new ShortcutChip(shortcuts.Self, shortcuts, tips);
-                    selfChip.EditRequested += x => EditShortcut(x);
-                    selfChip.ClearRequested += x => ClearShortcut(x, true);
-                    selfBar.Add(selfChip, false);
-                }
-            }
+            shortcuts.Load(apps);
             FitCards();
             listPanel.ResumeLayout();
-            if (ListForm != null) ListForm.Rebuild();
 
             empty.Text = error ?? "登録されているアプリはありません。";
-            empty.Visible = cards.Count == 0;
-            listPanel.Visible = cards.Count > 0;
             ScanLegacy();
+            // 設定ページを開いていたら、読み直したアプリで開き直す (アプリが消えていたら一覧へ)
+            if (settingsShown)
+            {
+                if (page.IsSelfPage) ShowSettings(null);
+                else if (FindApp(page.AppId) != null && !IsSelf(FindApp(page.AppId))) ShowSettings(page.AppId);
+                else ShowList();
+            }
+            else ShowList();
             RefreshStatus();
+            if (shortcuts.Migrated) footer.StatusText = "1.5 までのショートカットの設定を引き継ぎました";
         }
 
         static bool IsSelf(AppEntry a) { return a.Self || a.Id.Equals(Program.Id, StringComparison.OrdinalIgnoreCase); }
 
-        // ---------- スタートアップ ----------
+        // ---------- 画面の切り替え (一覧 ⇔ 設定ページ) ----------
 
-        /// <summary>カードのトグル・ヘッダーのトグル・お知らせを、レジストリの今の状態に合わせる</summary>
+        /// <summary>設定ページに切り替える (appId が null / "TealHub" なら Teal Hub 自身)。見つからなければ false</summary>
+        public bool ShowSettings(string appId)
+        {
+            AppEntry app = null;
+            if (appId != null && !appId.Equals(Program.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                app = apps.FirstOrDefault(a => a.Id.Equals(appId, StringComparison.OrdinalIgnoreCase));
+                if (app == null) { footer.StatusText = appId + " は apps.json にありません"; return false; }
+            }
+            SuspendLayout();
+            listPanel.Visible = false; empty.Visible = false; notices.Visible = false; selfBar.Visible = false;
+            page.ShowFor(app);
+            page.Visible = true;
+            settingsShown = true;
+            page.BringToFront();
+            ResumeLayout();
+            page.BtnBack.Focus();
+            return true;
+        }
+
+        /// <summary>アプリの一覧に戻る</summary>
+        public void ShowList()
+        {
+            if (settingsShown && page.Box_Focused()) shortcuts.ResumeAll();
+            SuspendLayout();
+            page.Visible = false;
+            settingsShown = false;
+            selfBar.Visible = true;
+            empty.Visible = cards.Count == 0;
+            listPanel.Visible = cards.Count > 0;
+            notices.Visible = notices.Controls.Count > 0;
+            ResumeLayout();
+            RefreshStatus();
+        }
+
+        // ---------- スタートアップ・常駐 ----------
+
+        StartupState StartupOf(AppEntry a)
+        {
+            StartupState st;
+            return appStartup.TryGetValue(a.Id, out st) ? st : new StartupState();
+        }
+
+        /// <summary>レジストリの今の状態を読み直して、要約・設定ページ・お知らせに反映する</summary>
         public void RefreshStartup()
         {
-            foreach (var c in cards) c.ApplyStartup(Startup.Get(c.App.Id, c.App.ExePath));
+            appStartup.Clear();
+            foreach (var a in apps) appStartup[a.Id] = Startup.Get(a.Id, a.ExePath);
             selfState = Startup.Get(AppInfo.Id, Startup.CurrentExe);
-            updatingSelf = true;
-            try { selfStartup.Checked = selfState.Registered; }
-            finally { updatingSelf = false; }
+            foreach (var c in cards) UpdateSummary(c);
+            UpdateSelfSummary();
+            if (settingsShown) page.RefreshState();
             UpdateNotices();
         }
 
-        /// <summary>カードのトグル (または「登録し直す」)</summary>
-        public void SetAppStartup(AppCard card, bool on)
+        /// <summary>カードの要約: 「ショートカット: Alt + V ・ 常駐: オン ・ スタートアップ: オフ」</summary>
+        void UpdateSummary(AppCard c)
         {
-            if (on && !File.Exists(card.App.ExePath))
+            var parts = new List<string>();
+            var color = Theme.SubText;
+            var slot = shortcuts.For(c.App.Id);
+            if (slot == null || slot.Current.IsEmpty) parts.Add("ショートカット: なし");
+            else if (slot.Error != null || (!slot.Active && !shortcuts.Suspended)) { parts.Add("ショートカット: " + slot.Current.Display + " (使えません)"); color = Theme.Danger; }
+            else parts.Add("ショートカット: " + slot.Current.Display);
+            bool resident = HubShortcuts.IsResident(c.App);
+            parts.Add("常駐: " + (resident ? "オン" : "オフ"));
+            var st = StartupOf(c.App);
+            switch (st.Status)
             {
-                Dialogs.Warn(this, card.App.Name + " の exe が見つからないため、スタートアップに登録できません。\n\n" + card.App.ExePath);
-                card.ApplyStartup(Startup.Get(card.App.Id, card.App.ExePath));
-                return;
+                case StartupStatus.PathMismatch: parts.Add("スタートアップ: 登録先が違います"); color = Theme.Danger; break;
+                case StartupStatus.DisabledByUser: parts.Add("スタートアップ: 無効 (タスク マネージャー)"); if (color != Theme.Danger) color = Theme.Warning; break;
+                default:
+                    // 常駐オフのアプリはスタートアップを選べないので、登録が残っていなければ出さない
+                    if (resident || st.Registered) parts.Add("スタートアップ: " + (st.Registered ? "オン" : "オフ"));
+                    break;
             }
-            var err = Startup.TrySet(card.App.Id, card.App.ExePath, on);
-            if (err != null) Dialogs.Error(this, card.App.Name + " のスタートアップを変更できませんでした。\n\n" + err);
-            else footer.StatusText = card.App.Name + (on ? " を Windows の起動時に自動で起動します" : " の自動起動をやめました");
-            RefreshStartup();
-            ScanLegacy();
+            c.SetSummary(string.Join(" ・ ", parts), color);
         }
 
-        public void SetSelfStartup(bool on)
+        void UpdateSelfSummary()
+        {
+            var self = shortcuts.Self;
+            string key;
+            var color = Theme.SubText;
+            if (self == null || self.Current.IsEmpty) key = "なし";
+            else if (self.Error != null || (!self.Active && !shortcuts.Suspended)) { key = self.Current.Display + " (使えません)"; color = Theme.Danger; }
+            else key = self.Current.Display;
+            string st = selfState.Status == StartupStatus.PathMismatch ? "登録先が違います" : selfState.Status == StartupStatus.DisabledByUser ? "無効 (タスク マネージャー)" : selfState.Registered ? "オン" : "オフ";
+            if (selfState.Status != StartupStatus.On && selfState.Registered && color == Theme.SubText) color = Theme.Warning;
+            selfBar.SetSummary("ショートカット: " + key + " ・ 常駐: 常に ・ スタートアップ: " + st, color);
+        }
+
+        /// <summary>スタートアップのオン・オフ (または「登録し直す」)。変えられたら true</summary>
+        public bool SetAppStartup(AppEntry app, bool on)
+        {
+            if (on && !HubShortcuts.IsResident(app))
+            {
+                footer.StatusText = app.Name + " は常駐がオフのため、スタートアップに登録できません";
+                RefreshStartup();
+                return false;
+            }
+            if (on && !File.Exists(app.ExePath))
+            {
+                Dialogs.Warn(this, app.Name + " の exe が見つからないため、スタートアップに登録できません。\n\n" + app.ExePath);
+                RefreshStartup();
+                return false;
+            }
+            var err = Startup.TrySet(app.Id, app.ExePath, on);
+            if (err != null) Dialogs.Error(this, app.Name + " のスタートアップを変更できませんでした。\n\n" + err);
+            else footer.StatusText = app.Name + (on ? " を Windows の起動時に通知領域で起動します" : " の自動起動をやめました");
+            RefreshStartup();
+            ScanLegacy();
+            return err == null;
+        }
+
+        public bool SetSelfStartup(bool on)
         {
             var err = Startup.TrySet(AppInfo.Id, Startup.CurrentExe, on);
             if (err != null) Dialogs.Error(this, "Teal Hub のスタートアップを変更できませんでした。\n\n" + err);
-            else footer.StatusText = on ? "Teal Hub を Windows の起動時に自動で起動します" : "Teal Hub の自動起動をやめました";
+            else footer.StatusText = on ? "Teal Hub を Windows の起動時に通知領域で起動します" : "Teal Hub の自動起動をやめました";
             RefreshStartup();
+            return err == null;
+        }
+
+        /// <summary>常駐のオン・オフ。オフにしたらスタートアップも解除する (常駐しないアプリは自動起動しても意味がないため)</summary>
+        public bool SetResident(AppEntry app, bool on)
+        {
+            var err = shortcuts.SetResident(app, on);
+            if (err != null) { Dialogs.Error(this, app.Name + " の常駐の設定を保存できませんでした。\n\n" + err); RefreshStartup(); return false; }
+            string msg = on ? app.Name + " は×で閉じても通知領域に残ります" : app.Name + " は×で閉じると終了します";
+            if (!on && Startup.Get(app.Id, app.ExePath).Command != null)
+            {
+                var e2 = Startup.TrySet(app.Id, app.ExePath, false);
+                msg += e2 == null ? " (スタートアップも解除しました)" : " (スタートアップを解除できませんでした: " + e2 + ")";
+            }
+            footer.StatusText = msg;
+            RefreshStartup();
+            return true;
         }
 
         /// <summary>古い exe (1.0) や手作業のショートカットによる自動起動を探す</summary>
@@ -629,6 +662,8 @@ namespace TealSuite.Hub
             }
             if (selfState.Status == StartupStatus.PathMismatch)
                 list.Add(Tuple.Create("self", "Teal Hub のスタートアップの登録先が違います。\n登録先: " + selfState.RegisteredPath, "この場所で登録し直す", (Action)(() => SetSelfStartup(true))));
+            else if (!selfState.Registered && AnyAppStartupOn && !dismissed.Contains("selfoff"))
+                list.Add(Tuple.Create("selfoff", "Teal Hub のスタートアップがオフです。Windows の起動後、Teal Hub を開くまでショートカットは使えません。", "Teal Hub も登録する", (Action)(() => SetSelfStartup(true))));
             foreach (var g in legacy.GroupBy(x => x.AppId))
             {
                 var app = FindApp(g.Key);
@@ -650,7 +685,7 @@ namespace TealSuite.Hub
             {
                 var item = t;
                 bool isUpdate = item.Item1.StartsWith("update|");
-                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate);
+                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || item.Item1 == "selfoff" || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate);
                 if (isUpdate)
                 {
                     var r = updates.Available;
@@ -666,7 +701,7 @@ namespace TealSuite.Hub
                 bar.Margin = new Padding(0, 0, 0, Theme.S(8));
                 notices.Controls.Add(bar);
             }
-            notices.Visible = list.Count > 0;
+            notices.Visible = list.Count > 0 && !settingsShown;
             FitNotices();
             notices.ResumeLayout();
         }
@@ -706,32 +741,22 @@ namespace TealSuite.Hub
                 }
                 btnStopAll.Enabled = running > 0;
                 RefreshStartup();
-                footer.StatusText = cards.Count == 0 ? "" : string.Format("{0} 個のアプリ ・ {1} 個が実行中", cards.Count, running) + SelfKeyText();
+                if (!settingsShown)
+                    footer.StatusText = cards.Count == 0 ? "" : string.Format("{0} 個のアプリ ・ {1} 個が実行中", cards.Count, running) + SelfKeyText();
             }
             finally { refreshing = false; }
         }
 
         string SelfKeyText()
         {
-            var self = shortcuts == null ? null : shortcuts.Self;
+            var self = shortcuts.Self;
             if (self == null || self.Current.IsEmpty || self.Error != null) return "";
             return " ・ " + self.Current.Display + " で開く";
         }
 
         void Tick()
         {
-            if (shortcuts != null) shortcuts.RefreshFromDisk();   // アプリ側で変えたショートカット
             if (Visible && WindowState != FormWindowState.Minimized) RefreshStatus();   // 隠れている間はプロセスを調べない
-        }
-
-        // ---------- ショートカット ----------
-
-        void RefreshShortcutViews()
-        {
-            foreach (var c in cards) c.RefreshShortcuts(shortcuts);
-            if (selfChip != null) { selfChip.Refresh_(shortcuts, tips); selfBar.PerformLayout(); }
-            if (ListForm != null) ListForm.RefreshValues();
-            RefreshStatus();
         }
 
         public AppCard CardFor(string appId)
@@ -739,46 +764,29 @@ namespace TealSuite.Hub
             return cards.FirstOrDefault(c => c.App.Id.Equals(appId, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>ショートカットでアプリを開く (起動していなければ起動、起動中なら前面へ)</summary>
-        public void OpenApp(AppEntry app)
+        /// <summary>
+        /// アプリのショートカットが押されたとき:
+        ///  起動中なら「ショートカットが押された」と知らせる (Clip は履歴、Volume はミキサー、ほかは前面へ)。
+        ///  起動していなければ --show を付けて起動する (続けて押しても 2 秒は 1 回だけ)。
+        /// </summary>
+        public string TriggerApp(AppEntry app)
         {
             var card = CardFor(app.Id);
-            if (card == null) return;
+            if (card == null) return "none";
+            if (ctl.SendHotkey(app)) return "signal";
             RefreshStatus();
-            StartOrShow(card);
-        }
-
-        public void ShowShortcutList()
-        {
-            if (shortcuts == null) return;
-            if (ListForm != null) { AppHost.BringToFront(listForm); return; }
-            listForm = new ShortcutListForm(this, shortcuts);
-            listForm.FormClosed += (s, e) => listForm = null;
-            listForm.Show(this);
-        }
-
-        public static string EditTitle(ShortcutSlot s) { return s.AppName + " ・ " + s.Label; }
-
-        /// <summary>変更の画面を開く (HotkeySettingsForm)</summary>
-        public HotkeySettingsForm EditShortcut(ShortcutSlot slot)
-        {
-            if (EditForm != null) editForm.Close();
-            editForm = new HotkeySettingsForm(slot, EditTitle(slot), null);
-            editForm.FormClosed += (s, e) => { editForm = null; RefreshShortcutViews(); };
-            var owner = ListForm != null && listForm.Visible ? (Form)listForm : this;
-            if (owner.Visible) editForm.Show(owner); else editForm.Show();
-            return editForm;
-        }
-
-        /// <summary>解除する (なしにする)</summary>
-        public bool ClearShortcut(ShortcutSlot slot, bool confirm)
-        {
-            if (slot.Current.IsEmpty) return true;
-            if (confirm && slot.IsSelf && !Dialogs.Confirm(this, slot.Current.Display + " で Teal Hub を開けなくなります。解除しますか？\n(通知領域のアイコンからは、いつでも開けます)", "ショートカットを解除")) return false;
-            var err = slot.Apply(HotkeySpec.None);
-            if (err != null) { Dialogs.Error(this, err); return false; }
-            footer.StatusText = slot.Describe() + " のショートカットを解除しました";
-            return true;
+            if (card.Pids.Count > 0)
+            {
+                // Hotkey イベントに応えない (古いバージョンなど) → 前面に出すだけ
+                if (!ctl.Show(app)) footer.StatusText = app.Name + " の画面を前面に出せませんでした";
+                return "show";
+            }
+            DateTime last;
+            var now = Now();
+            if (lastLaunch.TryGetValue(app.Id, out last) && (now - last).TotalMilliseconds < LaunchDebounceMs) return "wait";
+            if (card.Busy) return "wait";
+            lastLaunch[app.Id] = now;
+            return StartOrShow(card, AppPrefs.ShowArg) ? "start" : "error";
         }
 
         // ---------- アップデート ----------
@@ -853,8 +861,6 @@ namespace TealSuite.Hub
         {
             allowClose = true;
             timer.Stop();
-            try { if (ListForm != null) listForm.Close(); } catch { }
-            try { if (EditForm != null) editForm.Close(); } catch { }
             if (Visible) Close();
             if (!IsDisposed) Dispose();
         }
@@ -866,29 +872,33 @@ namespace TealSuite.Hub
             if (e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
-                if (ListForm != null) listForm.Hide();
                 if (HideRequested != null) HideRequested(); else Hide();
             }
         }
 
-        void StartOrShow(AppCard card)
+        /// <summary>起動 (起動中なら前面へ)。args はコマンドライン引数。起動できたら true</summary>
+        bool StartOrShow(AppCard card, string args)
         {
-            if (card.Busy) return;
+            if (card.Busy) return false;
             if (card.Pids.Count > 0)
             {
                 if (!ctl.Show(card.App)) footer.StatusText = card.App.Name + " の画面を前面に出せませんでした";
-                return;
+                return true;
             }
+            bool ok = false;
             try
             {
                 card.Busy = true;
                 card.Apply(AppStatus.Busy, "起動中…");
-                ctl.Start(card.App);
+                ctl.Start(card.App, args);
                 footer.StatusText = card.App.Name + " を起動しました";
+                ok = true;
             }
             catch (Exception ex)
             {
-                Dialogs.Error(this, card.App.Name + " を起動できませんでした。\n\n" + ex.Message);
+                if (args == null || Visible) Dialogs.Error(this, card.App.Name + " を起動できませんでした。\n\n" + ex.Message);
+                else DataStore.Log("hotkey start " + card.App.Id + ": " + ex.Message);
+                footer.StatusText = card.App.Name + " を起動できませんでした";
             }
             finally
             {
@@ -897,6 +907,7 @@ namespace TealSuite.Hub
                 t.Tick += (s, e) => { t.Stop(); t.Dispose(); card.Busy = false; RefreshStatus(); };
                 t.Start();
             }
+            return ok;
         }
 
         /// <summary>穏やかに終了 → 応答がなければ確認して強制終了。終わったら true。</summary>

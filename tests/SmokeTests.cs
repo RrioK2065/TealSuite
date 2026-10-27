@@ -41,12 +41,12 @@ static class SmokeTests
         Run("Teal Clip: 履歴とショートカット", TestClipboardHistory);
         Run("Teal Volume: スライダーと表示名", TestVolume);
         Run("全体ショートカット: 使える組み合わせと登録", () => HotkeyTests.RunRules(Check));
-        Run("Teal Volume: 常駐 (隠す・開く・Alt+V・終了)", () => HotkeyTests.RunVolumeTray(Check, tmp));
+        Run("Teal Volume: 常駐オン・オフ (隠す・開く・終了・Teal Hub からの合図)", () => HotkeyTests.RunVolumeTray(Check, tmp));
         Run("スタートアップ: 登録・登録先の違い・古い自動起動", () => StartupTests.Run(Check, tmp));
         Run("スタートアップ: Teal Hub の画面", () => StartupTests.RunHub(Check, tmp, dist));
-        Run("ショートカット: 持ち主・重複・解除・保存", () => ShortcutTests.RunOwnership(Check, tmp, dist));
-        Run("ショートカット: アプリが持つキー (Teal Clip) の読み直し", () => ShortcutTests.RunAppOwned(Check, tmp));
-        Run("Teal Hub: 常駐 (Alt+H)・カード・一覧・アップデートの入口", () => ShortcutTests.RunHubUi(Check, tmp, dist));
+        Run("ショートカット: Teal Hub が全部受け付ける・重複・解除・常駐・1.5 からの引き継ぎ", () => ShortcutTests.RunOwnership(Check, tmp, dist));
+        Run("Teal Clip: 常駐オン・オフと Teal Hub からの合図", () => ShortcutTests.RunClipTray(Check, tmp));
+        Run("Teal Hub: Alt+H・設定ボタン・設定ページ・ショートカットで起動・アップデートの入口", () => ShortcutTests.RunHubUi(Check, tmp, dist));
         Run("アップデート: ファイルの形・パス・バージョン・ハッシュ", () => UpdaterTests.RunFormat(Check));
         Run("アップデート: 確認と apps.json のまとめ直し", () => UpdaterTests.RunPlanAndMerge(Check, tmp));
         Run("アップデート: 適用・失敗時の巻き戻し・前のバージョンに戻す", () => UpdaterTests.RunApply(Check, tmp));
@@ -143,7 +143,7 @@ static class SmokeTests
         Check(apps.Count == 4, "Teal Hub 自身を除いて 4 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.5.0"), "バージョン 1.5.0");
+        Check(apps.All(a => a.Version == "1.6.0"), "バージョン 1.6.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている

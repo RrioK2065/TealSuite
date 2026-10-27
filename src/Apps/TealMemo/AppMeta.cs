@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Memo - メモ")]
 [assembly: AssemblyDescription("思いついたことをすぐに書き留めるメモ帳")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace TealSuite.Memo
 {

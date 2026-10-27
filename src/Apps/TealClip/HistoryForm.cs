@@ -79,16 +79,20 @@ namespace TealSuite.Clip
             WindowMemory.Attach(this, 680, 560, "historyWindow");
             FormClosing += (s, e) =>
             {
-                // × で閉じても常駐は続ける (終了はトレイメニューから)
-                if (e.CloseReason == CloseReason.UserClosing && !AppHost.IsExiting) { e.Cancel = true; Hide(); }
+                // × で閉じたら隠す (常駐していれば通知領域に残る。常駐しなければ少しして終了する)
+                if (e.CloseReason == CloseReason.UserClosing && !AppHost.IsExiting && !ctx.IsExited) { e.Cancel = true; Hide(); }
             };
             RefreshList();
         }
 
+        /// <summary>見出しの下の 1 行 (テスト用にも使う)</summary>
+        public string SubtitleText { get; private set; }
+
         public void UpdateSubtitle()
         {
             // 「閉じても常駐」の説明は起動時の通知に任せ、ヘッダーは呼び出しキーだけにする (幅が足りないため)
-            header.SetDetail(ctx.Hotkey.IsEmpty ? "ショートカットなし" : ctx.HotkeyError == null ? "呼び出し: " + ctx.Hotkey.Display : "ショートカット未登録 (設定で変更)");
+            SubtitleText = (ctx.Hotkey.IsEmpty ? "ショートカットなし" : "呼び出し: " + ctx.Hotkey.Display) + (ctx.Resident ? "" : " ・ 常駐オフ");
+            header.SetDetail(SubtitleText);
             header.Invalidate();
         }
 

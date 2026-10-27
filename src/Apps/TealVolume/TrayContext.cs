@@ -1,7 +1,9 @@
 // Teal Volume (音量操作) - 常駐部分 (通知領域アイコン・全体ショートカット・画面の開閉)
-//  - ×で閉じても終了せず通知領域に隠れる (初回だけ案内を出す)。終了は通知領域のメニューか Teal Hub の「終了」
-//  - 全体ショートカット (初期設定 Alt+V、解除も可) で画面を開く / 隠す。値は shortcuts.json の "open" (Teal Hub の一覧からも変更できる)
-//  - --startup (ログイン時の自動起動) では画面を出さずに常駐する
+//  - 1.6.0: 常駐するかは Teal Hub の設定 (初期設定はオフ)。
+//      常駐オン: ×で閉じても終了せず通知領域に隠れる (初回だけ案内を出す)。終了は通知領域のメニューか Teal Hub の「終了」
+//      常駐オフ: ×で閉じたら終了する
+//  - ショートカット (初期設定 Alt+V) は Teal Hub が受け付け、Hotkey イベントで開く / 隠すを頼んでくる
+//  - --startup (ログイン時の自動起動) では画面を出さずに常駐する (常駐オフなら何もせず終了)
 using System;
 using System.Drawing;
 using System.Runtime.Serialization;
@@ -20,15 +22,12 @@ namespace TealSuite.Volume
     public class VolumeTray : ApplicationContext
     {
         public const string SettingsFile = "settings.json";
-        /// <summary>初期設定のショートカット</summary>
+        /// <summary>初期設定のショートカット (Teal Hub が受け付ける)</summary>
         public static readonly HotkeySpec DefaultHotkey = HotkeySpec.Of(HotMods.Alt, Keys.V);
-        public const string HotkeySlot = "open", HotkeyLabel = "画面を開く / 隠す";
 
         public readonly MainForm Window;
-        public readonly HotkeyController Hotkeys;
         readonly VmSettings settings;
         readonly NotifyIcon tray = new NotifyIcon();
-        HotkeySettingsForm settingsForm;
         bool exiting;
 
         /// <summary>本当に終了するときの処理 (テストでは差し替える)</summary>
@@ -36,19 +35,16 @@ namespace TealSuite.Volume
         /// <summary>案内の通知を出した回数 (テスト用)</summary>
         public int TipCount { get; private set; }
         public bool IsExited { get { return exiting; } }
-        public HotkeySettingsForm OpenSettings { get { return settingsForm != null && !settingsForm.IsDisposed ? settingsForm : null; } }
+        /// <summary>ショートカット (表示用。押されたら Teal Hub が Hotkey イベントで知らせてくる)</summary>
+        public HotkeySpec Hotkey { get; private set; }
+        /// <summary>常駐するか (Teal Hub の設定。初期設定はオフ = 閉じたら終了)</summary>
+        public bool Resident { get; private set; }
+        public bool TrayVisible { get { return tray.Visible; } }
 
         public VolumeTray(string[] args, bool startHidden)
         {
             settings = DataStore.LoadQuiet(SettingsFile, () => new VmSettings());
-            Hotkeys = ShortcutStore.CreateOwned(HotkeySlot, HotkeyLabel, DefaultHotkey, settings.Hotkey);
-            Hotkeys.Pressed += ToggleFromHotkey;
-            Hotkeys.Changed += () =>
-            {
-                settings.Hotkey = Hotkeys.Current.ToSaved();   // 1.3 に戻したときのために settings.json にも残す
-                DataStore.TrySave(SettingsFile, settings);
-                UpdateHotkeyText();
-            };
+            LoadPrefs();
 
             Window = new MainForm();
             Window.HideRequested += HideWindow;
@@ -58,7 +54,7 @@ namespace TealSuite.Volume
 
             var menu = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
             menu.Items.Add(new ToolStripMenuItem("開く", null, (s, e) => ShowWindow()) { Font = Theme.Bold });
-            menu.Items.Add(new ToolStripMenuItem("設定…", null, (s, e) => ShowSettings()));
+            menu.Items.Add(new ToolStripMenuItem("設定 (Teal Hub)…", null, (s, e) => ShowSettings()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("終了", null, (s, e) => ExitApp()));
             tray.ContextMenuStrip = menu;
@@ -67,16 +63,22 @@ namespace TealSuite.Volume
             // 1 回のクリックで開く / 隠す。ダブルクリックは必ず開く (1 回目のクリックで隠れても戻す)
             tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ToggleFromTray(); };
             tray.MouseDoubleClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
-            tray.Visible = true;
+            tray.Visible = Resident;
 
-            AppHost.ShowRequested = ShowWindow;   // 2 回目の起動・Teal Hub の「表示」
-            AppHost.ExitRequested = ExitApp;      // Teal Hub の「終了」
-            AppHost.ReloadRequested = ReloadHotkey; // Teal Hub でショートカットを変えたとき
+            AppHost.ShowRequested = ShowWindow;        // 2 回目の起動・Teal Hub の「表示」
+            AppHost.HotkeyRequested = ToggleFromHotkey; // Teal Hub がショートカットを受けたとき
+            AppHost.ExitRequested = ExitApp;           // Teal Hub の「終了」
+            AppHost.ReloadRequested = Reload;          // Teal Hub でショートカット・常駐を変えたとき
             Application.ApplicationExit += (s, e) => Cleanup();
 
-            if (Hotkeys.Error != null)
-                tray.ShowBalloonTip(8000, AppInfo.DisplayName, Hotkeys.Error + "\n通知領域のアイコンを右クリック →「設定」で変更できます。", ToolTipIcon.Warning);
-
+            if (startHidden && !Resident)
+            {
+                // ログイン時に起動されたが常駐しない設定 → 何も出さずに終わる (メッセージループが始まってから)
+                var t = new Timer { Interval = 50 };
+                t.Tick += (s, e) => { t.Stop(); t.Dispose(); ExitApp(); };
+                t.Start();
+                return;
+            }
             if (!startHidden) ShowWindow();
             foreach (var a in args ?? new string[0])
             {
@@ -85,23 +87,33 @@ namespace TealSuite.Volume
             }
         }
 
-        /// <summary>Teal Hub が shortcuts.json を書き換えたら読み直す</summary>
-        public void ReloadHotkey()
+        void LoadPrefs()
         {
-            Hotkeys.Reload(ShortcutStore.Get(AppInfo.Id, HotkeySlot));
+            Hotkey = HotkeySpec.FromSaved(AppPrefs.HotkeyOf(AppInfo.Id), DefaultHotkey);
+            string exe = null;
+            try { exe = Application.ExecutablePath; } catch { }
+            Resident = AppPrefs.IsResident(AppInfo.Id, AppPrefs.DefaultResident(AppInfo.Id, false, exe));
+        }
+
+        /// <summary>Teal Hub が設定 (app-settings.json) を変えたら読み直す</summary>
+        public void Reload()
+        {
+            LoadPrefs();
             UpdateHotkeyText();
+            if (!exiting) tray.Visible = Resident;
+            if (!Resident && !Window.Visible && !exiting) ExitApp();   // 隠れていたのに常駐をやめた
         }
 
         string TrayTip()
         {
-            if (Hotkeys.Current.IsEmpty) return AppInfo.DisplayName;
-            var t = AppInfo.DisplayName + " (" + (Hotkeys.Error == null ? Hotkeys.Current.Display + " で開く" : "ショートカット未登録") + ")";
+            if (Hotkey.IsEmpty) return AppInfo.DisplayName;
+            var t = AppInfo.DisplayName + " (" + Hotkey.Display + " で開く)";
             return t.Length > 63 ? t.Substring(0, 63) : t;
         }
 
         void UpdateHotkeyText()
         {
-            Window.HotkeyText = Hotkeys.Error == null && !Hotkeys.Current.IsEmpty ? Hotkeys.Current.Display + " で開閉" : null;
+            Window.HotkeyText = !Hotkey.IsEmpty ? Hotkey.Display + " で開閉" : null;
             tray.Text = TrayTip();
         }
 
@@ -118,12 +130,18 @@ namespace TealSuite.Volume
         {
             if (!Window.Visible) return;
             Window.Hide();
+            if (!Resident)
+            {
+                // 常駐しない設定: 閉じたら終了 (閉じる処理の途中なので、少しあとで)
+                if (Window.IsHandleCreated) Window.BeginInvoke((Action)ExitApp); else ExitApp();
+                return;
+            }
             if (!settings.TrayTipShown)
             {
                 settings.TrayTipShown = true;
                 DataStore.TrySave(SettingsFile, settings);
                 TipCount++;
-                var how = Hotkeys.Error == null && !Hotkeys.Current.IsEmpty ? Hotkeys.Current.Display + " か、通知領域のアイコンのクリックで開けます。" : "通知領域のアイコンのクリックで開けます。";
+                var how = !Hotkey.IsEmpty ? Hotkey.Display + " か、通知領域のアイコンのクリックで開けます。" : "通知領域のアイコンのクリックで開けます。";
                 tray.ShowBalloonTip(6000, AppInfo.DisplayName + " は通知領域に常駐しています", how + "\n終了するときは、アイコンを右クリック →「終了」。", ToolTipIcon.Info);
             }
         }
@@ -154,21 +172,17 @@ namespace TealSuite.Volume
             return Form.ActiveForm == Window;
         }
 
+        /// <summary>設定 (ショートカット・常駐・スタートアップ) は Teal Hub の設定ページで変える</summary>
         public void ShowSettings()
         {
             if (exiting) return;
-            if (settingsForm != null && !settingsForm.IsDisposed) { AppHost.BringToFront(settingsForm); return; }
-            settingsForm = new HotkeySettingsForm(Hotkeys, "画面を開くショートカット", "Windows にサインインすると、画面を出さずに通知領域に常駐します。");
-            settingsForm.FormClosed += (s, e) => { settingsForm = null; UpdateHotkeyText(); };
-            settingsForm.Show();
-            AppHost.BringToFront(settingsForm);
+            HubLink.OpenSettings(Window.Visible ? Window : null, AppInfo.Id);
         }
 
         public void ExitApp()
         {
             if (exiting) return;
             exiting = true;
-            try { if (settingsForm != null && !settingsForm.IsDisposed) settingsForm.Close(); } catch { }
             try { Window.Shutdown(); } catch { }
             Cleanup();
             ExitAction();
@@ -176,7 +190,6 @@ namespace TealSuite.Volume
 
         void Cleanup()
         {
-            try { Hotkeys.Dispose(); } catch { }
             try { tray.Visible = false; tray.Dispose(); } catch { }
         }
     }

@@ -26,8 +26,12 @@ src/Common/               全アプリ共通コード (各 exe に一緒にコ�
   AboutDialog.cs          「このアプリについて」
   Native.cs               共通の Win32 API
   Startup.cs              スタートアップ (Run キー) の登録・状態・古い自動起動の置き換え
-  Hotkey.cs               全体ショートカット: HotkeySpec (組み合わせの解析・決まり)・GlobalHotkey (RegisterHotKey)・HotkeyController
-  HotkeySettingsForm.cs   ショートカットとスタートアップの設定画面 (Teal Clip・Teal Volume 共通)
+  Hotkey.cs               全体ショートカット: HotkeySpec (組み合わせの解析・決まり)・GlobalHotkey (RegisterHotKey)
+  HotkeyBox.cs            キーの組み合わせを拾う入力欄 (Teal Hub の設定ページ)
+  AppPrefs.cs             アプリごとの設定 (ショートカット・常駐)。TealHub\app-settings.json。Teal Hub が書き、各アプリは読むだけ
+  ResidentContext.cs      画面を持つアプリの「常駐」(通知領域・×の動き・Hotkey / Reload イベント)
+  HubLink.cs              アプリの「設定」から Teal Hub の設定ページを開く (TealHub.exe --settings <ID>)
+  Shortcuts.cs            1.5.0 までの shortcuts.json (読むだけ。引き継ぎ用)
 src/Apps/<AppId>/         アプリごとのソース。AppMeta.cs に名前 (AppSpec)・バージョン・Main
   refs.txt                (任意) 追加の参照 DLL。1 行 1 つ、# はコメント
 assets/icons/             <AppId>.ico (16〜256px) と <AppId>.png。tools/make_icons.py で生成
@@ -167,46 +171,57 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 アイコンの背景は #26A69A → #006969 のグラデーション (tools/make_icons.py の `GRAD_TOP` / `GRAD_BOT`)。
 
-## 通知領域に常駐するアプリ (Teal Clip・Teal Volume)
+## 常駐 (ResidentContext.cs・Teal Clip / Teal Volume の TrayContext.cs)
 
-`Main` で `AppHost.RunContext(Spec, () => new XxxTray(args, AppHost.StartedAtLogin))` を使い、
-`ApplicationContext` (TrayContext.cs) が NotifyIcon・メイン画面・全体ショートカットを持つ。
+1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 画面の × と Esc は `OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel` にして隠す
-  (先に `base.OnFormClosing` を呼ぶので WindowMemory は位置を保存できる)。最初の 1 回だけバルーンで案内し、
-  済んだことを settings.json (`trayTipShown`) に記録。`--startup` のときは画面を出さない
-- 本当に終わるのは通知領域の「終了」と `AppHost.ExitRequested` (Teal Hub の「終了」・名前付きイベント)。
-  `ExitApp` で設定画面を閉じ、画面を `Shutdown()` (Core Audio の解放) してからアイコンを消して終了
-- `AppHost.ShowRequested` (2 回目の起動・Teal Hub の「表示」) は画面を出して前面へ
-- Teal Volume: ショートカットは「隠れている / 後ろにある → 前面に出す」「前面 → 隠す」。表示されたら一覧を更新
-  してタイマーを動かし、隠れている間は止める (CPU を使わない)
+- 初期設定: Teal Clip だけオン (起動している間だけコピーを記録するため)。ほかはオフ。Teal Hub は常に常駐
+  (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
+- 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
+  バルーンで案内 (tray.json の `trayTipShown`)。`--startup` では画面を出さずに通知領域で待つ。終了は通知領域の「終了」
+- 常駐オフ: ×で閉じると終了。`--startup` で起動された場合は何もせず終了 (Teal Clip・Teal Volume)
+- スタートアップは常駐オンのときだけ選べる (Teal Hub の設定ページで、オフのときはスイッチが無効。
+  前の版の登録が残っているときは「オフにする」だけできる)
+- `AppHost.ReloadRequested` (Reload イベント): app-settings.json を読み直す。常駐をオフにしたとき画面が出ていなければ終了
+- `AppHost.HotkeyRequested` (Hotkey イベント): Teal Hub がショートカットを受けたときの合図。
+  Teal Clip は呼び出し画面、ほかは「後ろにある / 隠れている → 前面」「前面 → 隠す (オフなら最小化)」
+- `AppHost.ExitRequested` (Teal Hub の「終了」) と `AppHost.ShowRequested` (2 回目の起動) は今までどおり
+- Teal Volume: 表示されたら一覧を更新してタイマーを動かし、隠れている間は止める (CPU を使わない)
 
 ## 全体ショートカット (Hotkey.cs)
 
-- 保存形式は `"Alt+V"` / `"Ctrl+Shift+V"` (`HotkeySpec.ToString` / `TryParse`)。画面表示は `Display` (`Alt + V`)
+- 保存形式は `"Alt+V"` / `"Ctrl+Shift+V"` (`HotkeySpec.ToString` / `TryParse`。順番は Ctrl・Shift・Alt・Win)。
+  画面表示は `Display` (`Alt + V`)。`"none"` は「なし」(正しい設定)
 - 決まり (`HotkeySpec.Validate`。理由の文字列を返す、null なら可):
   - F キー以外は Ctrl・Alt・Win のどれかが必要 (文字だけ・Shift + 文字は不可。Alt + 文字は可)
   - Ctrl だけ + A/C/V/X/Y/Z/S、Alt だけ + F4/Tab/Space/Esc、Ctrl + Esc、Ctrl + Shift + Esc、
     Ctrl + Alt + Delete、Win + L は不可
   - `HotkeySpec.Caution` は不可ではないが注意を出すもの (Alt + 文字はほかのアプリのメニューより優先、F キー単独)
-- `HotkeyController(既定値, 保存値)` が登録を管理。`Apply` は決まりの確認 → 登録 → 失敗したら元のキーを登録し直して
-  理由 (`GlobalHotkey.ConflictMessage`: ほかのアプリが使用中) を返す。成功すると `Changed` (保存はアプリ側)
-- 設定画面ではキーを拾うため `Suspend` / `Resume` で一時的に外す
+- 登録は `GlobalHotkey.Register` (失敗したら `GlobalHotkey.ConflictMessage`: ほかのアプリが使用中)
 - mono (Windows 以外) では RegisterHotKey を呼ばず、`GlobalHotkey.FakeRegister` (テスト用。null なら常に成功) を使う
 
-## ショートカットの受け持ち (Shortcuts.cs・TealHub/HubShortcuts.cs)
+## ショートカットの受け持ち (AppPrefs.cs・TealHub/HubShortcuts.cs)
 
-- 保存先: `%APPDATA%\TealSuite\<受け持つアプリ>\shortcuts.json` (`ShortcutStore`)。項目ごとに `slot`・`keys`
-  - `keys`: `"Alt+H"` など / `"none"` (= 解除。正しい設定) / 項目がない (= 初期設定を使う)
-- アプリを「開く」ショートカットは Teal Hub が受け持つ (`slot = "open:<アプリ ID>"`、`ShortcutStore.OpenSlotFor`)。
-  Teal Hub 自身は `open:TealHub` (初期 Alt+H)。Teal Pass・Teal Memo・新しいアプリは初期設定なし
-- 常駐アプリが自分で受け持つもの: Teal Clip の呼び出し (初期 Ctrl+Shift+V)、Teal Volume を開く (初期 Alt+V)。
-  `ShortcutStore.CreateOwned` で作る。古い settings.json の hotkey は初回だけ読み込む
-- Teal Hub で app 側の項目を変えたときは、そのアプリの shortcuts.json に書いてから
-  `HubShortcuts.SignalReload` (名前付きイベント) で読み込み直してもらう。アプリが起動していなければ次の起動時に反映
-- 重複: `ShortcutStore.FindDuplicate` / `CheckDuplicate` は全アプリの shortcuts.json を見る。保存時に拒否し、
-  一覧と Hub のカードは重複があれば警告表示 (`DuplicateCount`)
-- Teal Hub で新しいキーを拾っている間、app 側のキーはそのアプリが登録したまま (同じキーを押すとそのアプリが反応する)
+1.6.0 から、全アプリのショートカットを Teal Hub だけが登録する。
+
+- 保存先: `%APPDATA%\TealSuite\TealHub\app-settings.json`
+  `{"version":1,"apps":[{"id":"TealClip","hotkey":"Ctrl+Shift+V","resident":true}, ...]}`
+  - `hotkey` がない = 初期設定 (Teal Hub Alt+H・Teal Clip Ctrl+Shift+V・Teal Volume Alt+V・ほかはなし。`HubShortcuts.BuiltIn`)
+- 押されたとき (`HubShortcuts.TriggerApp`): アプリが起動していなければ `<アプリ>.exe --show` で起動
+  (`AppHost.ShowByHotkey`)、起動中なら Hotkey イベントを鳴らす。起動直後の連打は待つ (二重起動しない)
+- `HubShortcuts.Apply`: 決まりの確認 → ほかのアプリとの重複確認 (`DuplicateOf`) → 登録 → 失敗したら元のキーに戻して理由を返す。
+  成功したら保存してそのアプリの Reload イベントを鳴らす
+- 設定ページでキーを拾っている間は `SuspendAll` / `ResumeAll` で全部外す
+- 引き継ぎ: app-settings.json がないときだけ、1.5 の shortcuts.json (Teal Hub・Teal Clip・Teal Volume) と
+  1.3 の Teal Volume settings.json の hotkey を読む (`MigratedHotkey`)。何か引き継いだら初回だけお知らせ (`Migrated`)
+- 1.5 の shortcuts.json には書き込まない (1.5 に戻したときはそのまま使われる)
+
+## Teal Hub の設定ページ (TealHub/AppSettingsPage.cs・HubLink.cs)
+
+- 各カードと Teal Hub 自身の行の「⚙ 設定」で、画面がそのアプリの設定ページに切り替わる (「← 戻る」/ Esc で一覧へ)
+- 中身: ショートカット (欄をクリック → キーを押す →「登録」/「解除」/「初期設定に戻す」)、常駐、スタートアップ
+- アプリ側の「設定」は `HubLink.OpenSettings` → `TealHub.exe --settings <ID>`。Teal Hub が起動中なら
+  `TealHub\open-settings.txt` に ID を書いて Show イベントを鳴らし、起動中の Teal Hub が `TakeRequest` で読む (30 秒で無効)
 
 ## アップデート ファイル (.tealupdate)
 
@@ -321,10 +336,10 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
 - `TEALSUITE_RUNKEY_FILE` … Run キーの代わりにこのテキストファイル (1 行 1 件 `名前<TAB>コマンド`、先頭 `!` は無効化) を使う
 - `TEALSUITE_STARTUP_DIR` … スタートアップ フォルダーを差し替える
 - テストは tests/SmokeTests.cs (全体)、CHTests.cs (Teal Clip)、VMTests.cs (Teal Volume)、StartupTests.cs (スタートアップのロジックと Teal Hub のカード)、
-  HotkeyTests.cs (ショートカットの決まり・登録の失敗、Teal Volume の常駐: 隠す・開く・終了・設定画面)、
+  HotkeyTests.cs (ショートカットの決まり・登録の失敗、Teal Volume の常駐オン・オフ・Hotkey イベント・設定)、
   ShortcutTests.cs (受け持ち・重複・解除・Hub の画面)、UpdaterTests.cs (マニフェスト・ハッシュ・適用と元に戻す・apps.json のマージ・確認画面)、
   OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)
-- Hub の画面確認 (一覧・変更画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=list tests/shot.sh build/HubShots.exe out.png` (ビルド方法はファイルの先頭)
+- Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / settings:<AppId>) (ビルド方法はファイルの先頭)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
 - ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できないので、実機の Windows で確認する。

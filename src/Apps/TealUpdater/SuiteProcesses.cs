@@ -116,7 +116,8 @@ namespace TealSuite.Updater
                 try
                 {
                     var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = AppInfo.IsWindows };
-                    if (a.Resident && !a.Self) psi.Arguments = Startup.Arg;
+                    // 常駐するアプリは画面を出さずに通知領域で起動し直す (常駐の設定は Teal Hub が app-settings.json に保存)
+                    if (!a.Self && AppPrefs.IsResident(a.Id, AppPrefs.DefaultResident(a.Id, a.Resident || a.Id == "TealClip", exe))) psi.Arguments = Startup.Arg;
                     using (Process.Start(psi)) { }
                 }
                 catch (Exception ex) { errors.Add(a.Name + ": " + ex.Message); }

@@ -1,8 +1,7 @@
 // TealSuite 共通: 全体ショートカット (グローバル ホットキー)
 //  - HotkeySpec … "Ctrl+Shift+V" / "Alt+V" のような表現と、使える組み合わせかの検証
 //  - GlobalHotkey … RegisterHotKey で登録し、押されたら知らせる見えないウィンドウ
-//  - HotkeyController … 保存値の読み込み・変更 (失敗したら元に戻す)・設定画面での一時停止をまとめたもの
-//  Teal Clip (履歴の呼び出し)・Teal Volume (画面の開閉)・Teal Hub (各アプリを開く) が使う
+//  1.6.0 から登録するのは Teal Hub だけ (TealHub/HubShortcuts.cs)。押されたらアプリに Hotkey イベントで知らせる
 //  「ショートカットなし」も正しい設定: 保存値 "none" (NoneText)。保存値がない (null) ときだけ初期設定を使う
 using System;
 using System.Collections.Generic;
@@ -261,101 +260,5 @@ namespace TealSuite.Common
             Unregister();
             if (Handle != IntPtr.Zero) DestroyHandle();
         }
-    }
-
-    /// <summary>設定画面 (HotkeySettingsForm) が操作する「ショートカット 1 つ」</summary>
-    public interface IHotkeyTarget
-    {
-        HotkeySpec Default { get; }
-        HotkeySpec Current { get; }
-        /// <summary>今の組み合わせを登録できていない理由 (なければ null)</summary>
-        string Error { get; }
-        /// <summary>変更する (None で解除)。失敗したら理由</summary>
-        string Apply(HotkeySpec spec);
-        /// <summary>キー入力を取り込む間、今の登録を外す / 戻す</summary>
-        void Suspend();
-        void Resume();
-    }
-
-    /// <summary>アプリの全体ショートカット 1 つ分の状態 (今の組み合わせ・登録エラー・初期設定)。Current が None なら登録しない</summary>
-    public class HotkeyController : IHotkeyTarget, IDisposable
-    {
-        readonly GlobalHotkey win = new GlobalHotkey();
-        public HotkeySpec Default { get; private set; }
-        public HotkeySpec Current { get; private set; }
-        /// <summary>今の組み合わせを登録できなかった理由 (登録できていれば null)</summary>
-        public string Error { get; private set; }
-        public bool Active { get { return win.Active; } }
-        public event Action Pressed;
-        /// <summary>設定画面から変更に成功したとき (保存などに使う)</summary>
-        public event Action Changed;
-        /// <summary>ほかのアプリ (TealSuite) と同じ組み合わせなら理由を返す (Apply の前に確認する)。null なら確認しない</summary>
-        public Func<HotkeySpec, string> DuplicateCheck;
-
-        /// <param name="saved">保存値 (null = 初期設定、"none" = なし)</param>
-        public HotkeyController(HotkeySpec defaultSpec, string saved)
-        {
-            Default = defaultSpec;
-            var hk = HotkeySpec.FromSaved(saved, defaultSpec);
-            Current = hk;
-            win.Pressed += () => { if (Pressed != null) Pressed(); };
-            if (!hk.IsEmpty)
-            {
-                Error = win.Register(hk);
-                if (Error != null) DataStore.Log("hotkey " + hk + ": " + Error);
-            }
-        }
-
-        /// <summary>新しい組み合わせを試す (None なら解除)。だめなら元の登録に戻して理由を返す。</summary>
-        public string Apply(HotkeySpec spec)
-        {
-            if (spec.IsEmpty)
-            {
-                win.Unregister();
-                Current = HotkeySpec.None; Error = null;
-                if (Changed != null) Changed();
-                return null;
-            }
-            var why = HotkeySpec.Validate(spec);
-            if (why != null) return why;
-            if (DuplicateCheck != null) { var dup = DuplicateCheck(spec); if (dup != null) return dup; }
-            var err = win.Register(spec);
-            if (err != null)
-            {
-                if (Error == null && !Current.IsEmpty) win.Register(Current); // 元のショートカットに戻す
-                return err;
-            }
-            Current = spec; Error = null;
-            if (Changed != null) Changed();
-            return null;
-        }
-
-        /// <summary>
-        /// 保存値から読み直す (Teal Hub が変更したとき)。登録できなくてもその値にする (Error に理由)。
-        /// 変わったら Changed を呼んで true。
-        /// </summary>
-        public bool Reload(string saved)
-        {
-            var hk = HotkeySpec.FromSaved(saved, Default);
-            if (hk.SameAs(Current) && (Error == null || hk.IsEmpty)) return false;
-            win.Unregister();
-            Current = hk; Error = null;
-            if (!hk.IsEmpty)
-            {
-                Error = win.Register(hk);
-                if (Error != null) DataStore.Log("hotkey reload " + hk + ": " + Error);
-            }
-            if (Changed != null) Changed();
-            return true;
-        }
-
-        /// <summary>設定画面でキー入力を取り込む間は、今のショートカットを一時的に外す</summary>
-        public void Suspend() { win.Unregister(); }
-        public void Resume() { if (!win.Active && Error == null && !Current.IsEmpty) win.Register(Current); }
-
-        /// <summary>テスト用</summary>
-        public void SimulatePress() { win.SimulatePress(); }
-
-        public void Dispose() { win.Dispose(); }
     }
 }

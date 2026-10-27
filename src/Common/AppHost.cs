@@ -3,7 +3,9 @@
 //  - Teal Hub (アプリ管理) からの「終了」要求を名前付きイベントで受け取り、きれいに終了する
 //  - 予期しない例外を error.log に記録
 //  - Windows のログイン時 (--startup 付き) に起動されたときは静かに起動する
-//    (ウィンドウ型は最小化、トレイ型は案内の通知を出さない。すでに起動中なら何も表示せずに終わる)
+//    (常駐がオンなら通知領域に静かに、オフなら最小化。すでに起動中なら何も表示せずに終わる)
+//  - Teal Hub のショートカットで起動されたとき (--show 付き) は ShowByHotkey が true。
+//    起動中のアプリには Teal Hub が Hotkey イベントを鳴らす (HotkeyRequested)
 using System;
 using System.Diagnostics;
 using System.Linq;
@@ -23,6 +25,10 @@ namespace TealSuite.Common
         public static Action ExitRequested;
         /// <summary>Teal Hub がこのアプリの設定 (ショートカットなど) を書き換えたときに呼ばれる。既定は何もしない。</summary>
         public static Action ReloadRequested;
+        /// <summary>Teal Hub で登録したショートカットが押されたときに呼ばれる。既定は ShowRequested と同じ。</summary>
+        public static Action HotkeyRequested;
+        /// <summary>すでに起動していたとき (2 回目の起動の側)、起動中のほうに知らせる前に呼ばれる。Teal Hub の --settings で使う</summary>
+        public static Action SecondInstance;
 
         static Control marshal;
 
@@ -33,21 +39,20 @@ namespace TealSuite.Common
         /// <summary>Windows のログイン時に (スタートアップ登録の --startup 付きで) 起動されたなら true</summary>
         public static bool StartedAtLogin { get; private set; }
 
+        /// <summary>Teal Hub のショートカットで起動された (--show 付き) なら true</summary>
+        public static bool ShowByHotkey { get; private set; }
+
         public static void Run(AppSpec spec, Func<Form> createMainForm)
         {
-            RunContext(spec, () =>
-            {
-                var f = createMainForm();
-                // ログイン時は最小化で起動 (WindowMemory が位置を復元した後に最小化する)
-                if (StartedAtLogin) f.Load += (s, e) => f.WindowState = FormWindowState.Minimized;
-                return new ApplicationContext(f);
-            });
+            // 画面を持つアプリ (Teal Pass・Teal Memo など)。常駐がオンなら ×で閉じても通知領域に残る (ResidentContext.cs)
+            RunContext(spec, () => new ResidentContext(createMainForm()));
         }
 
         public static void RunContext(AppSpec spec, Func<ApplicationContext> createContext)
         {
             AppInfo.Init(spec);
             try { StartedAtLogin = Startup.HasStartupArg(Environment.GetCommandLineArgs().Skip(1)); } catch { StartedAtLogin = false; }
+            try { ShowByHotkey = Environment.GetCommandLineArgs().Skip(1).Any(a => a != null && a.Equals(AppPrefs.ShowArg, StringComparison.OrdinalIgnoreCase)); } catch { ShowByHotkey = false; }
             string id = spec.Id, name = spec.Name;
             Mutex mutex = null;
             bool created = true;
@@ -57,14 +62,22 @@ namespace TealSuite.Common
                 // ログイン時の自動起動と重なった (すでに起動中) ときは何も表示しない
                 if (StartedAtLogin) { if (mutex != null) mutex.Dispose(); return; }
                 try { if (AppInfo.IsWindows) Native.AllowSetForegroundWindow(-1); } catch { }
+                try { if (SecondInstance != null) SecondInstance(); } catch (Exception ex) { DataStore.Log("second instance: " + ex.Message); }
+                // ショートカットで起動された (Teal Hub が起動中と気づかなかった) ときは、ショートカットと同じ動きを頼む
+                if (ShowByHotkey)
+                {
+                    if (!Signal(AppInfo.HotkeyEventName(id))) Signal(AppInfo.ShowEventName(id));
+                    if (mutex != null) mutex.Dispose();
+                    return;
+                }
                 if (!Signal(AppInfo.ShowEventName(id)))
                     MessageBox.Show(name + " はすでに起動しています。", name, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 if (mutex != null) mutex.Dispose();
                 return;
             }
 
-            EventWaitHandle exitEvt = null, showEvt = null, reloadEvt = null;
-            RegisteredWaitHandle exitWait = null, showWait = null, reloadWait = null;
+            EventWaitHandle exitEvt = null, showEvt = null, reloadEvt = null, hotkeyEvt = null;
+            RegisteredWaitHandle exitWait = null, showWait = null, reloadWait = null, hotkeyWait = null;
             try
             {
                 // 二重起動でないと確定してから旧データを引き継ぐ (フォームがデータを読む前)
@@ -88,6 +101,9 @@ namespace TealSuite.Common
                 reloadEvt = TryCreateEvent(AppInfo.ReloadEventName(id));
                 if (reloadEvt != null)
                     reloadWait = ThreadPool.RegisterWaitForSingleObject(reloadEvt, (st, to) => OnUi(() => { if (ReloadRequested != null) ReloadRequested(); }), null, -1, false);
+                hotkeyEvt = TryCreateEvent(AppInfo.HotkeyEventName(id));
+                if (hotkeyEvt != null)
+                    hotkeyWait = ThreadPool.RegisterWaitForSingleObject(hotkeyEvt, (st, to) => OnUi(OnHotkey), null, -1, false);
 
                 Application.Run(createContext());
             }
@@ -96,12 +112,21 @@ namespace TealSuite.Common
                 if (exitWait != null) exitWait.Unregister(null);
                 if (showWait != null) showWait.Unregister(null);
                 if (reloadWait != null) reloadWait.Unregister(null);
+                if (hotkeyWait != null) hotkeyWait.Unregister(null);
+                if (hotkeyEvt != null) hotkeyEvt.Dispose();
                 if (reloadEvt != null) reloadEvt.Dispose();
                 if (exitEvt != null) exitEvt.Dispose();
                 if (showEvt != null) showEvt.Dispose();
                 if (marshal != null) marshal.Dispose();
                 if (mutex != null) { try { mutex.ReleaseMutex(); } catch { } mutex.Dispose(); }
             }
+        }
+
+        static void OnHotkey()
+        {
+            if (HotkeyRequested != null) HotkeyRequested();
+            else if (ShowRequested != null) ShowRequested();
+            else ActivateMainForm();
         }
 
         static EventWaitHandle TryCreateEvent(string name)

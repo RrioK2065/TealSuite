@@ -2,6 +2,7 @@
 //  - ×で閉じても終了せず通知領域に隠れる (初回だけ案内を出す)。終了は通知領域のメニュー
 //  - Alt+H (初期設定、変更・解除も可) で画面を開く / 隠す。ほかのアプリを開くショートカットも Teal Hub が受け持つ
 //  - --startup (ログイン時の自動起動) では画面を出さずに常駐する。もう一度起動すると画面を出す
+//  - --settings <アプリ ID> で起動されたら、そのアプリの設定ページを開く (各アプリの「設定…」メニューから)
 using System;
 using System.Drawing;
 using System.Runtime.Serialization;
@@ -43,7 +44,7 @@ namespace TealSuite.Hub
             Shortcuts = new HubShortcuts();
             Window = new MainForm(Shortcuts) { HideOnClose = true };
             Shortcuts.ToggleHub = ToggleFromHotkey;
-            Shortcuts.OpenApp = a => Window.OpenApp(a);
+            Shortcuts.TriggerApp = a => Window.TriggerApp(a);
             Shortcuts.Changed += UpdateTrayText;
             Window.HideRequested += HideWindow;
             Window.FormClosed += (s, e) => { if (!exiting) ExitApp(); };
@@ -55,7 +56,7 @@ namespace TealSuite.Hub
 
             var menu = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
             menu.Items.Add(new ToolStripMenuItem("開く", null, (s, e) => ShowWindow()) { Font = Theme.Bold });
-            menu.Items.Add(new ToolStripMenuItem("ショートカット一覧…", null, (s, e) => { ShowWindow(); Window.ShowShortcutList(); }));
+            menu.Items.Add(new ToolStripMenuItem("Teal Hub の設定…", null, (s, e) => OpenSettings(null)));
             menu.Items.Add(new ToolStripMenuItem("更新を確認", null, (s, e) => { ShowWindow(); Updates.CheckNow(); }));
             menu.Items.Add(new ToolStripMenuItem("アップデート ファイルを開く…", null, (s, e) => { ShowWindow(); Window.BeginInvoke((Action)(() => Window.OpenUpdateFileDialog())); }));
             menu.Items.Add(new ToolStripSeparator());
@@ -76,9 +77,12 @@ namespace TealSuite.Hub
 
             var self = Shortcuts.Self;
             if (self != null && self.Error != null)
-                tray.ShowBalloonTip(8000, AppInfo.DisplayName, self.Error + "\n画面の「ショートカット一覧」で変更できます。", ToolTipIcon.Warning);
+                tray.ShowBalloonTip(8000, AppInfo.DisplayName, self.Error + "\nTeal Hub の「設定」で変更できます。", ToolTipIcon.Warning);
 
-            if (!startHidden) ShowWindow();
+            HubLink.TakeRequest();   // 前回の残り (使わない)
+            var target = HubLink.SettingsTarget(args);
+            if (target != null) OpenSettings(target);
+            else if (!startHidden) ShowWindow();
             // オンラインのアップデート確認 (ログイン直後の混雑を避けて少し待つ。テストでは TEALSUITE_NO_UPDATE_CHECK=1 で止める)
             if (Environment.GetEnvironmentVariable("TEALSUITE_NO_UPDATE_CHECK") != "1") Updates.Start(startHidden ? 60000 : 5000);
         }
@@ -94,9 +98,20 @@ namespace TealSuite.Hub
 
         public bool WindowShown { get { return Window.Visible && Window.WindowState != FormWindowState.Minimized; } }
 
+        /// <summary>設定ページを開いて画面を出す (appId が null / TealHub なら Teal Hub 自身)</summary>
+        public void OpenSettings(string appId)
+        {
+            if (exiting) return;
+            ShowWindow();
+            if (!Window.ShowSettings(appId)) Window.ShowList();
+        }
+
         public void ShowWindow()
         {
             if (exiting) return;
+            // ほかのアプリの「設定…」から頼まれたページ (TealHub.exe --settings <ID>)
+            var req = HubLink.TakeRequest();
+            if (req != null) { AppHost.BringToFront(Window); if (!Window.ShowSettings(req)) Window.ShowList(); return; }
             bool wasHidden = !Window.Visible;
             AppHost.BringToFront(Window);
             if (wasHidden) Window.RefreshStatus();
@@ -113,7 +128,7 @@ namespace TealSuite.Hub
                 TipCount++;
                 var self = Shortcuts.Self;
                 var how = self != null && self.Error == null && !self.Current.IsEmpty ? self.Current.Display + " か、通知領域のアイコンのクリックで開けます。" : "通知領域のアイコンのクリックで開けます。";
-                tray.ShowBalloonTip(6000, "Teal Hub は通知領域に常駐しています", how + "\nアプリのショートカットも使えます。終了するときは、アイコンを右クリック →「終了」。", ToolTipIcon.Info);
+                tray.ShowBalloonTip(6000, "Teal Hub は通知領域に常駐しています", how + "\nアプリのショートカットも使えます (各アプリの「設定」で変更)。終了するときは、アイコンを右クリック →「終了」。", ToolTipIcon.Info);
             }
         }
 

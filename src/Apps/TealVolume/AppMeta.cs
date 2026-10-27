@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Volume - 音量操作")]
 [assembly: AssemblyDescription("アプリごとの音量を調整する")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace TealSuite.Volume
 {
@@ -21,7 +21,7 @@ namespace TealSuite.Volume
             Id = Id,
             Name = "Teal Volume",
             Role = "音量操作",
-            Description = "Windows の「アプリの音量」と同じように、アプリごとの音量とミュートを調整します。スライダーは 1% ずつ、Shift を押しながらドラッグすると 5% ずつ動きます。通知領域 (タスクバー右下) に常駐し、ショートカット (初期設定: Alt+V) で開いたり隠したりできます。",
+            Description = "Windows の「アプリの音量」と同じように、アプリごとの音量とミュートを調整します。スライダーは 1% ずつ、Shift を押しながらドラッグすると 5% ずつ動きます。ショートカット (初期設定: Alt+V) で開いたり隠したりできます。Teal Hub の設定で「常駐」をオンにすると、閉じても通知領域 (タスクバー右下) に残ります。",
             LegacyIds = new[] { "VolumeMixer" },   // 1.0 (AppSuite) の ID
         };
         [STAThread]

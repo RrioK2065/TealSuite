@@ -172,7 +172,7 @@ namespace TealSuite.Volume
             var btnWin = header.AddAction(new FlatButton("Windows の設定", ButtonKind.Ghost));
             var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Ghost));
             btnSettings.Click += (s, e) => { if (SettingsRequested != null) SettingsRequested(); };
-            new ToolTip().SetToolTip(btnSettings, "ショートカット (開く・隠す) とスタートアップの設定");
+            new ToolTip().SetToolTip(btnSettings, "ショートカット・常駐・スタートアップの設定 (Teal Hub で開きます)");
             btnRefresh.Click += (s, e) => RefreshAll(true);
             btnWin.Click += (s, e) => { try { Process.Start("ms-settings:apps-volume"); } catch { try { Process.Start("sndvol.exe"); } catch { } } };
             new ToolTip().SetToolTip(btnRefresh, "最新の状態に更新 (F5)");

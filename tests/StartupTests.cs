@@ -133,53 +133,87 @@ static class StartupTests
         public override void Set(string name, string command) { throw new UnauthorizedAccessException("レジストリへのアクセスが拒否されました"); }
     }
 
-    /// <summary>Teal Hub の画面: カードのトグル・ヘッダーのトグル・お知らせ (画面を出さずに操作する)</summary>
+    /// <summary>Teal Hub の画面: 設定ページのスタートアップ (常駐オンのときだけ)・Teal Hub 自身・お知らせ</summary>
     public static void RunHub(Action<bool, string> check, string tmp, string dist)
     {
         Check = check;
         var root = Path.Combine(tmp, "startup-hub");
+        if (Directory.Exists(root)) Directory.Delete(root, true);
         var startupDir = Path.Combine(root, "Startup");
         Directory.CreateDirectory(startupDir);
+        var oldData = Environment.GetEnvironmentVariable("TEALSUITE_DATA_DIR");
+        Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", Path.Combine(root, "data"));
         Environment.SetEnvironmentVariable("TEALSUITE_MANIFEST", Path.Combine(dist, "apps.json"));
         AppInfo.Init(new AppSpec { Id = "TealHub", Name = "Teal Hub", Role = "アプリ管理", LegacyIds = new[] { "AppManager" } });
         var key = new MemoryRunKey();
         S.RunKey = key;
         S.Folder = new StartupFolder(startupDir, p => null);
-        using (var f = new AM::TealSuite.Hub.MainForm())
+        GlobalHotkey.FakeRegister = s => null;
+        try
         {
-            f.LoadManifest();
-            var clip = f.Cards.First(c => c.App.Id == "TealClip");
-            Check(f.Cards.All(c => c.StartupSwitch.Text == "スタートアップ" && !c.StartupSwitch.Checked), "各カードに「スタートアップ」のトグル (最初はオフ)");
-            clip.StartupSwitch.Checked = true;
-            Check(key.Get("TealSuite.TealClip") == S.CommandFor(clip.App.ExePath), "カードのトグルをオンにすると登録: " + key.Get("TealSuite.TealClip"));
-            clip.StartupSwitch.Checked = false;
-            Check(key.Get("TealSuite.TealClip") == null, "オフにすると登録を消す");
+            using (var f = new AM::TealSuite.Hub.MainForm())
+            {
+                f.LoadManifest();
+                f.Shortcuts.SignalReload = id => true;
+                var clip = f.Cards.First(c => c.App.Id == "TealClip");
+                var pass = f.Cards.First(c => c.App.Id == "TealPass");
+                Check(f.Cards.All(c => !c.SummaryText.Contains("スタートアップ: オン")), "最初はどのアプリもスタートアップはオフ");
+                Check(f.ShowSettings("TealClip") && f.SettingsPage.StartupSwitch.Enabled && !f.SettingsPage.StartupSwitch.Checked, "Teal Clip (常駐オン) の設定ページでスタートアップを選べる");
+                f.SettingsPage.StartupSwitch.Checked = true;
+                Check(key.Get("TealSuite.TealClip") == S.CommandFor(clip.App.ExePath), "設定ページのトグルをオンにすると登録: " + key.Get("TealSuite.TealClip"));
+                f.SettingsPage.StartupSwitch.Checked = false;
+                Check(key.Get("TealSuite.TealClip") == null, "オフにすると登録を消す");
 
-            key.Values["TealSuite.TealPass"] = "\"D:\\古い場所\\TealPass.exe\" --startup";
-            f.RefreshStartup();
-            var pass = f.Cards.First(c => c.App.Id == "TealPass");
-            Check(pass.StartupSwitch.Checked && pass.StartupInfo.Status == StartupStatus.PathMismatch, "レジストリの変更を読み直し、登録先の違いを表示");
-            f.SetAppStartup(pass, true);   // 「この場所で登録し直す」
-            Check(key.Get("TealSuite.TealPass") == S.CommandFor(pass.App.ExePath) && pass.StartupInfo.Status == StartupStatus.On, "「登録し直す」で今の場所に直る");
+                // 常駐オフのアプリに古い登録が残っている (登録先も違う)
+                key.Values["TealSuite.TealPass"] = "\"D:\\古い場所\\TealPass.exe\" --startup";
+                f.RefreshStartup();
+                f.ShowSettings("TealPass");
+                var page = f.SettingsPage;
+                Check(page.StartupSwitch.Checked && page.StartupSwitch.Enabled && !page.ResidentSwitch.Checked, "常駐オフでも登録が残っていれば表示し、オフにはできる");
+                Check(!f.SetAppStartup(pass.App, true) && key.Get("TealSuite.TealPass").Contains("古い場所"), "常駐オフのまま「登録し直す」ことはしない");
+                page.StartupSwitch.Checked = false;
+                Check(key.Get("TealSuite.TealPass") == null && !page.StartupSwitch.Enabled, "残っていた登録を消すと、トグルは選べなくなる");
 
-            f.SelfStartup.Checked = true;
-            Check(key.Get("TealSuite.TealHub") == S.CommandFor(S.CurrentExe), "ヘッダーのトグルで Teal Hub 自身も登録できる");
-            key.Values["TealSuite.TealHub"] = "\"C:\\old\\TealHub.exe\" --startup";
-            f.RefreshStartup();
-            Check(f.SelfStartup.Checked && f.NoticeCount == 1, "Teal Hub 自身の登録先が違うとお知らせを出す");
-            f.SetSelfStartup(true);
-            Check(f.NoticeCount == 0, "登録し直すとお知らせが消える");
+                // 常駐オンで登録先が違う → 「この場所で登録し直す」
+                f.ShowSettings("TealClip");
+                key.Values["TealSuite.TealClip"] = "\"D:\\古い場所\\TealClip.exe\" --startup";
+                f.RefreshStartup();
+                Check(page.StartupSwitch.Checked && page.StartupFix.Text == "この場所で登録し直す" && page.StartupNoteText.Contains("古い場所"), "登録先の違いを表示 (" + page.StartupNoteText + ")");
+                f.SetAppStartup(clip.App, true);   // 「この場所で登録し直す」と同じ
+                Check(key.Get("TealSuite.TealClip") == S.CommandFor(clip.App.ExePath) && !page.StartupNoteText.Contains("古い場所"), "「この場所で登録し直す」で今の場所に直る");
+                Check(clip.SummaryText.EndsWith("スタートアップ: オン"), "カードの要約にも反映 (" + clip.SummaryText + ")");
 
-            key.Values["ClipboardHistory"] = "C:\\AppSuite\\apps\\ClipboardHistory\\ClipboardHistory.exe";
-            File.WriteAllText(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk"), "lnk");
-            f.ScanLegacy();
-            Check(f.LegacyItems.Count == 2 && f.NoticeCount == 1, "1.0 の ClipboardHistory.exe の自動起動を見つけてお知らせ (" + f.LegacyItems.Count + " 件)");
-            Check(key.Values.ContainsKey("ClipboardHistory") && File.Exists(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk")), "ボタンを押すまでは何も変えない");
-            f.ReplaceLegacy("TealClip", false);
-            Check(!key.Values.ContainsKey("ClipboardHistory") && !File.Exists(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk"))
-                && File.Exists(Path.Combine(AM::TealSuite.Hub.MainForm.RemovedStartupDir, "ClipboardHistory.exe - ショートカット.lnk")), "「Teal Clip に置き換える」で古い登録を退避");
-            Check(key.Get("TealSuite.TealClip") == S.CommandFor(clip.App.ExePath) && clip.StartupSwitch.Checked && f.NoticeCount == 0, "Teal Clip のトグルがオンになり、お知らせが消える");
+                // Teal Hub 自身
+                f.ShowSettings(null);
+                Check(page.IsSelfPage && page.StartupSwitch.Enabled, "Teal Hub の設定ページ");
+                page.StartupSwitch.Checked = true;
+                Check(key.Get("TealSuite.TealHub") == S.CommandFor(S.CurrentExe), "Teal Hub 自身もスタートアップに登録できる");
+                key.Values["TealSuite.TealHub"] = "\"C:\\old\\TealHub.exe\" --startup";
+                f.RefreshStartup();
+                f.ShowList();
+                Check(f.NoticeCount == 1 && f.SelfBar_.SummaryText.Contains("登録先が違います"), "Teal Hub 自身の登録先が違うとお知らせを出す");
+                f.SetSelfStartup(true);
+                Check(f.NoticeCount == 0, "登録し直すとお知らせが消える");
+
+                // 1.0 の自動起動
+                key.Values["ClipboardHistory"] = "C:\\AppSuite\\apps\\ClipboardHistory\\ClipboardHistory.exe";
+                File.WriteAllText(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk"), "lnk");
+                S.TrySet("TealClip", clip.App.ExePath, false);
+                f.ScanLegacy();
+                Check(f.LegacyItems.Count == 2 && f.NoticeCount == 1, "1.0 の ClipboardHistory.exe の自動起動を見つけてお知らせ (" + f.LegacyItems.Count + " 件)");
+                Check(key.Values.ContainsKey("ClipboardHistory") && File.Exists(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk")), "ボタンを押すまでは何も変えない");
+                f.ReplaceLegacy("TealClip", false);
+                Check(!key.Values.ContainsKey("ClipboardHistory") && !File.Exists(Path.Combine(startupDir, "ClipboardHistory.exe - ショートカット.lnk"))
+                    && File.Exists(Path.Combine(AM::TealSuite.Hub.MainForm.RemovedStartupDir, "ClipboardHistory.exe - ショートカット.lnk")), "「Teal Clip に置き換える」で古い登録を退避");
+                Check(key.Get("TealSuite.TealClip") == S.CommandFor(clip.App.ExePath) && clip.SummaryText.EndsWith("スタートアップ: オン") && f.NoticeCount == 0, "Teal Clip がスタートアップに入り、お知らせが消える");
+                f.Shortcuts.Dispose();
+            }
         }
-        Environment.SetEnvironmentVariable("TEALSUITE_MANIFEST", null);
+        finally
+        {
+            GlobalHotkey.FakeRegister = null;
+            Environment.SetEnvironmentVariable("TEALSUITE_MANIFEST", null);
+            Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", oldData);
+        }
     }
 }

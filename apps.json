@@ -1,15 +1,15 @@
 {
   "manifestVersion": 1,
   "suite": "TealSuite",
-  "suiteVersion": "1.5.0",
+  "suiteVersion": "1.6.0",
   "apps": [
     {
       "id": "TealHub",
       "name": "Teal Hub",
       "role": "アプリ管理",
       "exe": "TealHub.exe",
-      "version": "1.5.0",
-      "description": "TealSuite のアプリをまとめて起動・終了。ショートカットとアップデートもここから",
+      "version": "1.6.0",
+      "description": "TealSuite のアプリをまとめて起動・終了。各アプリのショートカット・常駐・スタートアップとアップデートもここから",
       "icon": "TealHub.ico",
       "legacyIds": ["AppManager"],
       "self": true,
@@ -23,28 +23,36 @@
       "name": "Teal Pass",
       "role": "パスワード管理",
       "exe": "apps/TealPass/TealPass.exe",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "description": "パスワードの生成・保管・管理。サイトごとにメモも残せます",
       "icon": "apps/TealPass/TealPass.ico",
-      "legacyIds": ["PasswordMaker"]
+      "legacyIds": ["PasswordMaker"],
+      "shortcuts": [
+        {"slot": "open", "label": "画面を開く"}
+      ],
+      "resident": false
     },
     {
       "id": "TealMemo",
       "name": "Teal Memo",
       "role": "メモ",
       "exe": "apps/TealMemo/TealMemo.exe",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "description": "思いついたことをすぐに書き留めるメモ帳。自動保存",
       "icon": "apps/TealMemo/TealMemo.ico",
-      "legacyIds": ["Memo"]
+      "legacyIds": ["Memo"],
+      "shortcuts": [
+        {"slot": "open", "label": "画面を開く"}
+      ],
+      "resident": false
     },
     {
       "id": "TealClip",
       "name": "Teal Clip",
       "role": "コピー履歴",
       "exe": "apps/TealClip/TealClip.exe",
-      "version": "1.5.0",
-      "description": "コピーした文字を10件まで記録。ショートカットで呼び出し (常駐)",
+      "version": "1.6.0",
+      "description": "コピーした文字を10件まで記録。ショートカットで呼び出し (常駐がおすすめ)",
       "icon": "apps/TealClip/TealClip.ico",
       "legacyIds": ["ClipboardHistory"],
       "shortcuts": [
@@ -57,14 +65,14 @@
       "name": "Teal Volume",
       "role": "音量操作",
       "exe": "apps/TealVolume/TealVolume.exe",
-      "version": "1.5.0",
-      "description": "アプリごとの音量を調整。ショートカットで開閉 (常駐)",
+      "version": "1.6.0",
+      "description": "アプリごとの音量を調整。ショートカットでミキサーを開閉",
       "icon": "apps/TealVolume/TealVolume.ico",
       "legacyIds": ["VolumeMixer"],
       "shortcuts": [
-        {"slot": "open", "label": "画面を開く / 隠す", "default": "Alt+V"}
+        {"slot": "open", "label": "ミキサーを開く / 隠す", "default": "Alt+V"}
       ],
-      "resident": true
+      "resident": false
     }
   ]
 }

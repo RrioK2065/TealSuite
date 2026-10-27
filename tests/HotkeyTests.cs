@@ -31,88 +31,131 @@ static class HotkeyTests
         Check(fk.ToString() == "Alt+V" && C.HotkeySpec.Validate(fk) == null, "押したキーから組み立て (Alt+V)");
         Check(V.VolumeTray.DefaultHotkey.ToString() == "Alt+V" && C.HotkeySpec.Validate(V.VolumeTray.DefaultHotkey) == null, "Teal Volume の初期設定は Alt+V");
 
-        // HotkeyController: 登録の失敗 (ほかのアプリが使用中) を報告し、元に戻す
+        // GlobalHotkey: 登録の失敗 (ほかのアプリが使用中) を報告する (1.6.0 では Teal Hub だけが使う)
         string taken = "Ctrl+Alt+K";
         C.GlobalHotkey.FakeRegister = s => s.ToString() == taken ? C.GlobalHotkey.ConflictMessage(s) : null;
         try
         {
-            var hc = new C.HotkeyController(V.VolumeTray.DefaultHotkey, "おかしな値");
-            Check(hc.Current.ToString() == "Alt+V" && hc.Error == null && hc.Active, "保存値が読めなければ初期設定で登録");
-            int changed = 0; hc.Changed += () => changed++;
-            var err = hc.Apply(C.HotkeySpec.Of(C.HotMods.Ctrl | C.HotMods.Alt, Keys.K));
-            Check(err != null && err.Contains("ほかのアプリ") && hc.Current.ToString() == "Alt+V" && hc.Active && changed == 0, "使用中なら理由を返し、元の Alt+V に戻す");
-            Check(hc.Apply(C.HotkeySpec.Of(C.HotMods.Ctrl, Keys.C)) != null && hc.Current.ToString() == "Alt+V", "不可の組み合わせは登録しない");
-            Check(hc.Apply(C.HotkeySpec.Of(C.HotMods.Alt, Keys.B)) == null && hc.Current.ToString() == "Alt+B" && changed == 1, "変更に成功");
-            hc.Suspend(); Check(!hc.Active, "設定中は一時的に外す"); hc.Resume(); Check(hc.Active, "設定画面を閉じると戻す");
-            var hc2 = new C.HotkeyController(V.VolumeTray.DefaultHotkey, taken);
-            Check(hc2.Error != null && !hc2.Active && hc2.Current.ToString() == taken, "起動時に登録できなければエラーを覚えておく");
-            hc.Dispose(); hc2.Dispose();
+            var g = new C.GlobalHotkey();
+            var err = g.Register(P(taken));
+            Check(err != null && err.Contains("ほかのアプリ") && !g.Active, "使用中なら理由を返す (" + err + ")");
+            Check(g.Register(P("Alt+V")) == null && g.Active, "空いていれば登録できる");
+            int n = 0; g.Pressed += () => n++; g.SimulatePress();
+            Check(n == 1, "押されたら知らせる");
+            g.Unregister(); Check(!g.Active, "外す");
+            g.Dispose();
         }
         finally { C.GlobalHotkey.FakeRegister = null; }
     }
 
-    /// <summary>Teal Volume の常駐: ×で隠れる・ショートカットで開閉・--startup は隠れて起動・終了</summary>
+    static void WritePrefs(string json)
+    {
+        var p = C.AppPrefs.FilePath;
+        Directory.CreateDirectory(Path.GetDirectoryName(p));
+        File.WriteAllText(p, json);
+    }
+
+    /// <summary>Teal Volume: 常駐オン (×で隠れる・ショートカットで開閉・--startup は隠れて起動) / 常駐オフ (×で終了)</summary>
     public static void RunVolumeTray(Action<bool, string> Check, string tmp)
     {
+        var oldData = Environment.GetEnvironmentVariable("TEALSUITE_DATA_DIR");
+        var d = Path.Combine(tmp, "vm-data");
+        if (Directory.Exists(d)) Directory.Delete(d, true);
+        Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", d);
         C.AppInfo.Init("TealVolume", "Teal Volume", "");
         Environment.SetEnvironmentVariable("TEALSUITE_DEMO", "1");
         var key = new C.MemoryRunKey();
         C.Startup.RunKey = key;
         C.Startup.Folder = new C.StartupFolder(Path.Combine(tmp, "vm-startup"), p => null);
-        try { File.Delete(C.DataStore.PathOf(V.VolumeTray.SettingsFile)); } catch { }
+        try
+        {
+            // ---- 常駐オフ (1.6.0 の初期設定)
+            var t0 = new V.VolumeTray(new string[0], false);
+            t0.ExitAction = () => { };
+            Application.DoEvents();
+            Check(!t0.Resident && !t0.TrayVisible && t0.Window.Visible, "初期設定は常駐オフ: 通知領域に出さず、画面を出す");
+            Check(t0.Window.HotkeyText == "Alt + V で開閉", "ショートカット (Teal Hub が受け付ける Alt+V) を画面に表示");
+            Check(C.AppHost.HotkeyRequested != null, "Teal Hub からの Hotkey イベントを受け取る");
+            t0.Window.Close(); Application.DoEvents();
+            Check(t0.IsExited, "常駐オフでは×で閉じると終了する");
 
-        // ログイン時 (--startup): 画面を出さない
-        var t = new V.VolumeTray(new string[0], true);
-        t.ExitAction = () => { };
-        Application.DoEvents();
-        Check(!t.Window.Visible, "--startup では画面を出さずに常駐");
-        Check(t.Window.HotkeyText == "Alt + V で開閉", "ショートカットを画面に表示");
+            // ---- 常駐オフでログイン時に起動された (登録が残っていた) → 何も出さずに終わる
+            var t1 = new V.VolumeTray(new string[0], true);
+            bool exited1 = false; t1.ExitAction = () => exited1 = true;
+            for (int i = 0; i < 20 && !exited1; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(10); }
+            Check(exited1 && !t1.Window.Visible, "常駐オフで --startup のときは画面を出さずに終了");
 
-        bool fg = false; t.ForegroundCheck = () => fg;
-        t.Hotkeys.SimulatePress(); Application.DoEvents();
-        Check(t.Window.Visible, "Alt+V で開く");
-        Check(t.Window.FooterText != null && t.Window.FooterText.StartsWith("Alt + V で開閉 ・ "), "下の帯に「Alt + V で開閉」(" + t.Window.FooterText + ")");
-        fg = false; t.Hotkeys.SimulatePress(); Application.DoEvents();
-        Check(t.Window.Visible, "後ろにあるときの Alt+V は前面に出す (隠さない)");
-        fg = true; t.Hotkeys.SimulatePress(); Application.DoEvents();
-        Check(!t.Window.Visible && t.TipCount == 1, "前面のときの Alt+V は隠す (初回だけ案内)");
+            // ---- 常駐オン (Teal Hub が app-settings.json に書く)
+            WritePrefs("{\"version\":1,\"apps\":[{\"id\":\"TealVolume\",\"hotkey\":\"Ctrl+Alt+M\",\"resident\":true}]}");
+            var t = new V.VolumeTray(new string[0], true);
+            t.ExitAction = () => { };
+            Application.DoEvents();
+            Check(t.Resident && t.TrayVisible && !t.Window.Visible, "常駐オン + --startup: 画面を出さずに通知領域に常駐");
+            Check(t.Window.HotkeyText == "Ctrl + Alt + M で開閉" && t.Hotkey.ToString() == "Ctrl+Alt+M", "Teal Hub で変えたショートカットを表示");
 
-        t.ToggleFromTray(); Application.DoEvents();
-        Check(t.Window.Visible, "通知領域のクリックで開く");
-        t.Window.Close(); Application.DoEvents();
-        Check(!t.Window.IsDisposed && !t.Window.Visible && !t.IsExited, "×では終了せず隠れる");
-        Check(t.TipCount == 1, "案内は 1 回だけ");
-        t.ShowWindow(); Application.DoEvents();
-        t.Window.WindowState = FormWindowState.Minimized; Application.DoEvents();
-        t.ShowWindow(); Application.DoEvents();
-        Check(t.Window.Visible && t.Window.WindowState == FormWindowState.Normal, "最小化中に開くと元に戻す (2 回目の起動・Teal Hub の「表示」も同じ)");
-        Check(C.AppHost.ShowRequested != null && C.AppHost.ExitRequested != null, "2 回目の起動・Teal Hub の「終了」を受け取る");
+            bool fg = false; t.ForegroundCheck = () => fg;
+            C.AppHost.HotkeyRequested(); Application.DoEvents();
+            Check(t.Window.Visible, "ショートカット (Hotkey イベント) で開く");
+            Check(t.Window.FooterText != null && t.Window.FooterText.StartsWith("Ctrl + Alt + M で開閉 ・ "), "下の帯にショートカット (" + t.Window.FooterText + ")");
+            fg = false; C.AppHost.HotkeyRequested(); Application.DoEvents();
+            Check(t.Window.Visible, "後ろにあるときは前面に出す (隠さない)");
+            fg = true; C.AppHost.HotkeyRequested(); Application.DoEvents();
+            Check(!t.Window.Visible && t.TipCount == 1 && !t.IsExited, "前面のときは隠す (初回だけ案内)");
 
-        // 設定画面: スタートアップのスイッチ (Teal Hub と同じ Run キー)
-        t.ShowSettings(); Application.DoEvents();
-        var sf = t.OpenSettings;
-        Check(sf != null && !sf.StartupSwitch.Checked, "設定画面を開く (スタートアップはオフ)");
-        sf.StartupSwitch.Checked = true; sf.SaveForTest(); Application.DoEvents();
-        var cmd = key.Get("TealSuite.TealVolume");
-        Check(cmd != null && cmd.EndsWith(" --startup") && C.Startup.Get("TealVolume", C.Startup.CurrentExe).Status == C.StartupStatus.On, "設定画面でスタートアップをオン (" + cmd + ")");
-        t.ShowSettings(); Application.DoEvents();
-        Check(t.OpenSettings != null && t.OpenSettings.StartupSwitch.Checked, "開き直すと Run キーの状態を反映");
-        t.OpenSettings.StartupSwitch.Checked = false; t.OpenSettings.SaveForTest(); Application.DoEvents();
-        Check(key.Get("TealSuite.TealVolume") == null, "オフにすると Run キーから外す");
+            t.ToggleFromTray(); Application.DoEvents();
+            Check(t.Window.Visible, "通知領域のクリックで開く");
+            t.Window.Close(); Application.DoEvents();
+            Check(!t.Window.IsDisposed && !t.Window.Visible && !t.IsExited && t.TipCount == 1, "×では終了せず隠れる (案内は 1 回だけ)");
+            t.ShowWindow(); Application.DoEvents();
+            t.Window.WindowState = FormWindowState.Minimized; Application.DoEvents();
+            t.ShowWindow(); Application.DoEvents();
+            Check(t.Window.Visible && t.Window.WindowState == FormWindowState.Normal, "最小化中に開くと元に戻す");
 
-        // 終了 (通知領域のメニュー / Teal Hub の「終了」= AppHost.ExitRequested)
-        C.AppHost.ExitRequested(); Application.DoEvents();
-        Check(t.IsExited && t.Window.IsDisposed, "終了要求で本当に閉じる (隠れていても)");
+            // 設定は Teal Hub の設定ページで (--settings TealVolume を付けて Teal Hub を起動)
+            var launched = new System.Collections.Generic.List<string>();
+            C.HubLink.LaunchHook = (exe, a) => launched.Add(Path.GetFileName(exe) + " " + a);
+            t.ShowSettings();
+            Check(launched.Count == 1 && launched[0] == "TealHub.exe --settings TealVolume", "「設定」は Teal Hub の設定ページを開く (" + (launched.Count > 0 ? launched[0] : "") + ")");
+            C.HubLink.LaunchHook = null;
 
-        // 2 回目: 普通に起動すると画面を出す。案内は済みなので出さない
-        var t2 = new V.VolumeTray(new string[0], false);
-        t2.ExitAction = () => { };
-        Application.DoEvents();
-        Check(t2.Window.Visible, "普通に起動すると画面を出す");
-        t2.HideWindow();
-        Check(t2.TipCount == 0, "常駐の案内は次回からは出さない");
-        t2.ExitApp(); Application.DoEvents();
-        Check(t2.Window.IsDisposed, "終了");
-        Environment.SetEnvironmentVariable("TEALSUITE_DEMO", null);
+            // Teal Hub で常駐をオフにした (Reload) → 隠れていれば終了
+            t.HideWindow();
+            WritePrefs("{\"version\":1,\"apps\":[{\"id\":\"TealVolume\",\"hotkey\":\"none\",\"resident\":false}]}");
+            C.AppHost.ReloadRequested(); Application.DoEvents();
+            Check(!t.Resident && t.Hotkey.IsEmpty && t.IsExited, "Teal Hub で常駐をオフにすると、隠れていた Teal Volume は終了");
+
+            // 表示中に常駐オフ → 通知領域から消え、閉じたら終了
+            WritePrefs("{\"version\":1,\"apps\":[{\"id\":\"TealVolume\",\"resident\":true}]}");
+            var t2 = new V.VolumeTray(new string[0], false);
+            t2.ExitAction = () => { };
+            Application.DoEvents();
+            Check(t2.Window.Visible && t2.Resident && t2.Hotkey.ToString() == "Alt+V", "保存値がなければショートカットは初期設定の Alt+V");
+            WritePrefs("{\"version\":1,\"apps\":[{\"id\":\"TealVolume\",\"resident\":false}]}");
+            C.AppHost.ReloadRequested(); Application.DoEvents();
+            Check(!t2.IsExited && !t2.TrayVisible && t2.Window.Visible, "表示中に常駐をオフ → 通知領域から消える (画面はそのまま)");
+            t2.HideWindow(); Application.DoEvents();
+            Check(t2.IsExited && t2.TipCount == 0, "そのあと閉じると終了 (常駐の案内は出さない)");
+
+            // 終了要求
+            WritePrefs("{\"version\":1,\"apps\":[{\"id\":\"TealVolume\",\"resident\":true}]}");
+            var t3 = new V.VolumeTray(new string[0], true);
+            t3.ExitAction = () => { };
+            C.AppHost.ExitRequested(); Application.DoEvents();
+            Check(t3.IsExited && t3.Window.IsDisposed, "終了要求 (Teal Hub の「終了」) で本当に閉じる (隠れていても)");
+
+            // 1.5 でスタートアップに登録していた人は、常駐オンのまま (app-settings.json がまだないとき)
+            File.Delete(C.AppPrefs.FilePath);
+            C.Startup.TrySet("TealVolume", System.Windows.Forms.Application.ExecutablePath, true);
+            var t4 = new V.VolumeTray(new string[0], true);
+            t4.ExitAction = () => { };
+            Application.DoEvents();
+            Check(t4.Resident && !t4.IsExited, "1.5 でスタートアップに登録していれば常駐オンとして動く");
+            t4.ExitApp();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TEALSUITE_DEMO", null);
+            Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", oldData);
+        }
     }
 }

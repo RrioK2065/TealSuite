@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Hub - アプリ管理")]
 [assembly: AssemblyDescription("TealSuite のアプリをまとめて起動・終了します")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace TealSuite.Hub
 {
@@ -21,7 +21,7 @@ namespace TealSuite.Hub
             Id = Id,
             Name = "Teal Hub",
             Role = "アプリ管理",
-            Description = "TealSuite のアプリをまとめて起動・終了します。アプリは apps.json に登録されたものが表示されます。\n通知領域に常駐し、Alt+H (変更・解除できます) で開けます。全アプリのショートカットとアップデートもここから。",
+            Description = "TealSuite のアプリをまとめて起動・終了します。アプリは apps.json に登録されたものが表示されます。\n通知領域に常駐し、Alt+H (変更・解除できます) で開けます。各アプリの「設定」で、ショートカット・常駐・スタートアップを選べます。",
             LegacyIds = new[] { "AppManager" },   // 1.0 (AppSuite) の ID
         };
         [STAThread]
@@ -36,6 +36,8 @@ namespace TealSuite.Hub
                     return UpdaterLauncher.Open(null, a) ? 0 : 1;
                 }
             }
+            // すでに起動中に「--settings <アプリ>」で起動されたら、起動中の Teal Hub にそのページを開いてもらう
+            AppHost.SecondInstance = () => { var t = HubLink.SettingsTarget(args); if (t != null) HubLink.WriteRequest(t); };
             AppHost.RunContext(Spec, () => new HubTray(args, AppHost.StartedAtLogin));
             return 0;
         }

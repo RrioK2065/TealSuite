@@ -64,16 +64,34 @@ namespace TealSuite.Hub
             catch { return false; }
         }
 
-        public void Start(AppEntry app)
+        /// <summary>テスト用: 起動を差し替える (アプリ, 引数)</summary>
+        public Action<AppEntry, string> StartHook;
+        /// <summary>テスト用: Hotkey イベントの送信を差し替える (届いたら true)</summary>
+        public Func<AppEntry, bool> HotkeyHook;
+
+        public void Start(AppEntry app) { Start(app, null); }
+
+        /// <param name="args">コマンドライン引数 (ショートカットで起動するときは "--show")</param>
+        public void Start(AppEntry app, string args)
         {
+            if (StartHook != null) { StartHook(app, args); return; }
             if (!File.Exists(app.ExePath)) throw new FileNotFoundException("実行ファイルが見つかりません。\n" + app.ExePath);
             var psi = new ProcessStartInfo(app.ExePath)
             {
+                Arguments = args ?? "",
                 WorkingDirectory = Path.GetDirectoryName(app.ExePath),
                 UseShellExecute = AppInfo.IsWindows,
             };
             var p = Process.Start(psi);
             if (p != null) lock (gate) { Process old; if (started.TryGetValue(app.Id, out old)) old.Dispose(); started[app.Id] = p; }
+        }
+
+        /// <summary>実行中のアプリに「ショートカットが押された」と知らせる (Hotkey イベント)。届いたら true</summary>
+        public bool SendHotkey(AppEntry app)
+        {
+            if (HotkeyHook != null) return HotkeyHook(app);
+            try { if (AppInfo.IsWindows) Native.AllowSetForegroundWindow(-1); } catch { }
+            return AppHost.Signal(AppInfo.HotkeyEventName(app.Id));
         }
 
         /// <summary>実行中のアプリの画面を前面に出す (アプリの Show イベントを鳴らす)</summary>

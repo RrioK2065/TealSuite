@@ -80,7 +80,8 @@ namespace TealSuite.Pass
             clip.Cleared += () => { lastAction = "クリップボードを消去しました"; UpdateFooter(); };
             KeyDown += OnKey;
             Load += (s, e) => { LoadVault(); Regenerate(); uiTimer.Start(); };
-            FormClosing += (s, e) => { SaveSettings(); clip.Dispose(); };
+            FormClosing += (s, e) => SaveSettings();
+            FormClosed += (s, e) => clip.Dispose();   // 常駐中に隠すだけのときは、コピーの自動消去を続ける
         }
 
         // ================= 生成 =================
