@@ -1,0 +1,7 @@
+# 改行コード: Windows 用のバッチは CRLF、シェル スクリプトとワークフローは LF
+* text=auto
+*.bat text eol=crlf
+*.sh text eol=lf
+*.yml text eol=lf
+*.png binary
+*.ico binary

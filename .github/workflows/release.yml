@@ -1,0 +1,98 @@
+# TealSuite のリリース
+#   main に push されたとき、apps.json の suiteVersion (例 1.5.0) のリリース v1.5.0 がまだなければ:
+#     ビルド → テスト → 全部入り zip とアップデート ファイル (.tealupdate) を作る → GitHub Releases に公開
+#   すでに同じバージョンのリリースがあれば何もしない (バージョンを上げずに push しても公開されない)。
+#   Teal Hub は releases/latest を見て新しいバージョンをお知らせする (DEVELOPING.md「リリース」)。
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TEALSUITE_NO_UPDATE_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: バージョンを読む
+        id: ver
+        run: |
+          VER=$(python3 -c 'import json; print(json.load(open("apps.json", encoding="utf-8-sig"))["suiteVersion"])')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$VER はもう公開済みです。何もしません。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$VER を公開します。"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: mono を入れる
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mono-devel xvfb xauth
+
+      - name: ビルド
+        if: steps.ver.outputs.skip == 'false'
+        run: sh ./build.sh
+
+      - name: テスト
+        if: steps.ver.outputs.skip == 'false'
+        run: xvfb-run -a sh tests/run_tests.sh
+
+      - name: 前のリリースの zip を取ってくる
+        if: steps.ver.outputs.skip == 'false'
+        id: prev
+        run: |
+          mkdir -p prev
+          PREV_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty' || true)
+          if [ -n "$PREV_TAG" ]; then
+            echo "前のリリース: $PREV_TAG"
+            gh release download "$PREV_TAG" --repo "$GITHUB_REPOSITORY" --dir prev --pattern 'TealSuite-[0-9]*.zip'
+            ZIPS=(prev/TealSuite-*.zip)
+            [ -f "${ZIPS[0]}" ] || { echo "前のリリースに TealSuite-*.zip がありません"; exit 1; }
+            echo "zip=${ZIPS[0]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "前のリリースはありません (初回)。"
+            echo "zip=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: リリース用ファイルを作る
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          PREV_ZIP: ${{ steps.prev.outputs.zip }}
+        run: |
+          if [ -n "$PREV_ZIP" ]; then
+            bash tools/release_build.sh --skip-build --prev "$PREV_ZIP" --out release
+          else
+            bash tools/release_build.sh --skip-build --out release
+          fi
+
+      - name: GitHub Releases に公開
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "v$VER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TealSuite $VER" \
+            --notes-file release/notes.md \
+            "release/TealSuite-$VER.zip" \
+            "release/TealSuite-$VER.zip.sha256" \
+            "release/TealSuite-update-$VER.tealupdate" \
+            "release/TealSuite-update-$VER.tealupdate.sha256"

@@ -1,0 +1,23 @@
+# ビルド結果・配布物 (GitHub Actions が Releases に置く)
+dist/
+build/
+release/
+*.tealupdate
+*.zip
+*.exe
+*.dll
+*.pdb
+# アップデートのバックアップ・作業用
+backup/
+.update-staging/
+# 鍵 (将来の署名用。絶対にコミットしない)
+keys/
+*.pem
+*.key
+*.snk
+# OS・エディタ
+Thumbs.db
+.DS_Store
+*.swp
+.vs/
+.vscode/

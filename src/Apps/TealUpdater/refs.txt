@@ -1,0 +1,2 @@
+# TealUpdater は zip (アップデート ファイル) を読むので System.IO.Compression を使う
+System.IO.Compression.dll

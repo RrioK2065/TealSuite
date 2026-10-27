@@ -1,0 +1,2 @@
+# 履歴ファイルを DPAPI (ProtectedData) で暗号化するため
+System.Security.dll

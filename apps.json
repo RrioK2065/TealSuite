@@ -1,0 +1,70 @@
+{
+  "manifestVersion": 1,
+  "suite": "TealSuite",
+  "suiteVersion": "1.5.0",
+  "apps": [
+    {
+      "id": "TealHub",
+      "name": "Teal Hub",
+      "role": "アプリ管理",
+      "exe": "TealHub.exe",
+      "version": "1.5.0",
+      "description": "TealSuite のアプリをまとめて起動・終了。ショートカットとアップデートもここから",
+      "icon": "TealHub.ico",
+      "legacyIds": ["AppManager"],
+      "self": true,
+      "shortcuts": [
+        {"slot": "open", "label": "画面を開く / 隠す", "default": "Alt+H"}
+      ],
+      "resident": true
+    },
+    {
+      "id": "TealPass",
+      "name": "Teal Pass",
+      "role": "パスワード管理",
+      "exe": "apps/TealPass/TealPass.exe",
+      "version": "1.5.0",
+      "description": "パスワードの生成・保管・管理。サイトごとにメモも残せます",
+      "icon": "apps/TealPass/TealPass.ico",
+      "legacyIds": ["PasswordMaker"]
+    },
+    {
+      "id": "TealMemo",
+      "name": "Teal Memo",
+      "role": "メモ",
+      "exe": "apps/TealMemo/TealMemo.exe",
+      "version": "1.5.0",
+      "description": "思いついたことをすぐに書き留めるメモ帳。自動保存",
+      "icon": "apps/TealMemo/TealMemo.ico",
+      "legacyIds": ["Memo"]
+    },
+    {
+      "id": "TealClip",
+      "name": "Teal Clip",
+      "role": "コピー履歴",
+      "exe": "apps/TealClip/TealClip.exe",
+      "version": "1.5.0",
+      "description": "コピーした文字を10件まで記録。ショートカットで呼び出し (常駐)",
+      "icon": "apps/TealClip/TealClip.ico",
+      "legacyIds": ["ClipboardHistory"],
+      "shortcuts": [
+        {"slot": "popup", "label": "履歴を呼び出す", "default": "Ctrl+Shift+V"}
+      ],
+      "resident": true
+    },
+    {
+      "id": "TealVolume",
+      "name": "Teal Volume",
+      "role": "音量操作",
+      "exe": "apps/TealVolume/TealVolume.exe",
+      "version": "1.5.0",
+      "description": "アプリごとの音量を調整。ショートカットで開閉 (常駐)",
+      "icon": "apps/TealVolume/TealVolume.ico",
+      "legacyIds": ["VolumeMixer"],
+      "shortcuts": [
+        {"slot": "open", "label": "画面を開く / 隠す", "default": "Alt+V"}
+      ],
+      "resident": true
+    }
+  ]
+}
