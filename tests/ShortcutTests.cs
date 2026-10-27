@@ -64,7 +64,7 @@ static class ShortcutTests
             var self = mgr.Self;
             var pass = mgr.For("TealPass"); var memo = mgr.For("TealMemo");
             var clip = mgr.For("TealClip"); var vol = mgr.For("TealVolume");
-            Check(mgr.Slots.Count == 5 && mgr.For("TealUpdater") == null, "ショートカットは Teal Hub と 4 アプリの 5 つ (TealUpdater はなし)");
+            Check(mgr.Slots.Count == 7 && mgr.For("TealUpdater") == null, "ショートカットは Teal Hub と 6 アプリの 7 つ (TealUpdater はなし)");
             Check(self != null && self.Current.ToString() == "Alt+H" && mgr.IsActive(self), "Teal Hub 自身は Alt+H");
             Check(clip.Current.ToString() == "Ctrl+Shift+V" && vol.Current.ToString() == "Alt+V", "初期設定: Teal Clip は Ctrl+Shift+V、Teal Volume は Alt+V");
             Check(pass.Current.IsEmpty && memo.Current.IsEmpty && pass.Label == "画面を開く", "Teal Pass・Teal Memo は初期設定なし");
@@ -306,7 +306,7 @@ static class ShortcutTests
 
             // カード: 設定の要約と「設定」ボタン
             var clipCard = f.CardFor("TealClip"); var passCard = f.CardFor("TealPass"); var volCard = f.CardFor("TealVolume");
-            Check(f.Cards.Count == 4 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "4 つのカードすべてに「設定」ボタン");
+            Check(f.Cards.Count == 6 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "6 つのカードすべてに「設定」ボタン");
             Check(f.SelfBar_.BtnSettings.Visible, "Teal Hub 自身の帯にも「設定」ボタン");
             Check(clipCard.SummaryText == "ショートカット: Ctrl + Shift + V ・ 常駐: オン ・ スタートアップ: オフ", "Teal Clip の要約: " + clipCard.SummaryText);
             Check(passCard.SummaryText == "ショートカット: なし ・ 常駐: オフ", "Teal Pass の要約 (常駐オフならスタートアップは出さない): " + passCard.SummaryText);
@@ -316,7 +316,7 @@ static class ShortcutTests
             clipCard.BtnSettings.PerformClick();
             var page = f.SettingsPage;
             Check(f.IsSettingsShown && page.AppId == "TealClip" && !passCard.Visible, "「設定」を押すと画面が Teal Clip の設定ページに切り替わる");
-            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.6.0"), "見出し: " + page.TitleText + " / " + page.SubText);
+            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.7.0"), "見出し: " + page.TitleText + " / " + page.SubText);
             Check(page.StatusText.Contains("Ctrl + Shift + V") && page.Box.Value.ToString() == "Ctrl+Shift+V", "ショートカット欄に今のキー (" + page.StatusText + ")");
             Check(page.ResidentSwitch.Checked && page.ResidentSwitch.Enabled && page.StartupSwitch.Enabled && !page.StartupSwitch.Checked, "常駐はオン、スタートアップは選べる (今はオフ)");
             Check(page.ResidentNoteText.Contains("記録を続けます"), "Teal Clip は常駐の意味を説明");

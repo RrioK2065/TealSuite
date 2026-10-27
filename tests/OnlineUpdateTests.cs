@@ -209,7 +209,7 @@ static class OnlineUpdateTests
         try
         {
             f.LoadManifest();
-            Check(f.SuiteVersion == "1.6.0", "今のバージョン: " + f.SuiteVersion);
+            Check(f.SuiteVersion == "1.7.0", "今のバージョン: " + f.SuiteVersion);
             var settings = new H.HubSettings();
             int saves = 0;
             var http = new FakeFetcher();
@@ -235,31 +235,31 @@ static class OnlineUpdateTests
             Check(msgs.Count == 1 && msgs[0].Contains("まだ公開"), "「更新を確認」では結果を出す: " + (msgs.Count > 0 ? msgs[0] : ""));
 
             // 新しいバージョン (自動)
-            var json = File.ReadAllBytes(FixturePath(dist));
+            var json = Encoding.UTF8.GetBytes(File.ReadAllText(FixturePath(dist)).Replace("1.7.0", "1.8.0")); // 今は 1.7.0 なので、見本は 1 つ先の版にする;
             http.Ok(api, json);
             now = now.AddHours(25);
             int before = saves;
-            Check(u.AutoCheck() && u.Available != null && u.Available.Version == "1.7.0" && msgs.Count == 1 && notes.Count == 0, "翌日の自動の確認で 1.7.0 を見つける (画面は出さない)");
-            Check(balloons.Count == 1 && balloons[0].Contains("1.7.0") && settings.NotifiedVersion == "1.7.0" && saves > before, "通知領域に 1 回お知らせして、設定を保存");
-            Check(f.UpdateButtonLabel.StartsWith("●") && f.UpdateButtonLabel.Contains("1.7.0"), "ボタンに印: " + f.UpdateButtonLabel);
-            var bar = f.NoticeBars.FirstOrDefault(b => b.Message.Contains("1.7.0"));
+            Check(u.AutoCheck() && u.Available != null && u.Available.Version == "1.8.0" && msgs.Count == 1 && notes.Count == 0, "翌日の自動の確認で 1.8.0 を見つける (画面は出さない)");
+            Check(balloons.Count == 1 && balloons[0].Contains("1.8.0") && settings.NotifiedVersion == "1.8.0" && saves > before, "通知領域に 1 回お知らせして、設定を保存");
+            Check(f.UpdateButtonLabel.StartsWith("●") && f.UpdateButtonLabel.Contains("1.8.0"), "ボタンに印: " + f.UpdateButtonLabel);
+            var bar = f.NoticeBars.FirstOrDefault(b => b.Message.Contains("1.8.0"));
             Check(bar != null && bar.Action.Text == "今すぐアップデート" && bar.Extra != null && bar.Extra.Text == "内容を見る" && bar.Dismiss != null, "お知らせ: 今すぐアップデート・内容を見る・あとで");
-            Check(bar != null && bar.Message.Contains("今は 1.6.0") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
+            Check(bar != null && bar.Message.Contains("今は 1.7.0") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
             now = now.AddHours(25);
             u.AutoCheck();
             Check(balloons.Count == 1, "同じバージョンの通知領域のお知らせは 1 回だけ");
 
             bar.Extra.SimulateClick();
-            Check(notes.Count == 1 && notes[0].Version == "1.7.0", "「内容を見る」で変更点");
+            Check(notes.Count == 1 && notes[0].Version == "1.8.0", "「内容を見る」で変更点");
             var cleaned = H.ReleaseNotesForm.CleanNotes(u.Available.Notes);
             Check(cleaned.Contains("・Teal Memo に検索") && !cleaned.Contains("1111111111") && !cleaned.Contains("sha256"), "変更点の画面には確認用の値を出さない");
             using (var nf = new H.ReleaseNotesForm(u, u.Available))
-                Check(nf.Text.Contains("1.7.0") && nf.Notes.Text.Contains("Teal Clip の履歴") && nf.BtnUpdate.Text == "今すぐアップデート", "変更点の画面");
+                Check(nf.Text.Contains("1.8.0") && nf.Notes.Text.Contains("Teal Clip の履歴") && nf.BtnUpdate.Text == "今すぐアップデート", "変更点の画面");
 
             // メニュー
             f.BuildUpdateMenu();
             var items = f.UpdateMenu.Items.OfType<ToolStripMenuItem>().ToList();
-            Check(items.Any(i => i.Text == "1.7.0 にアップデート…") && items.Any(i => i.Text == "更新を確認") && items.Any(i => i.Text == "リリース ページを開く"), "メニュー: " + string.Join(" / ", items.Select(i => i.Text)));
+            Check(items.Any(i => i.Text == "1.8.0 にアップデート…") && items.Any(i => i.Text == "更新を確認") && items.Any(i => i.Text == "リリース ページを開く"), "メニュー: " + string.Join(" / ", items.Select(i => i.Text)));
             var auto = items.First(i => i.Text.StartsWith("自動で更新を確認"));
             Check(auto.Checked, "自動の確認は最初オン");
             auto.PerformClick();
@@ -274,9 +274,9 @@ static class OnlineUpdateTests
             u.SetAutoCheck(true);
 
             // あとで
-            bar = f.NoticeBars.First(b => b.Message.Contains("1.7.0"));
+            bar = f.NoticeBars.First(b => b.Message.Contains("1.8.0"));
             bar.Dismiss.SimulateClick();
-            Check(!f.NoticeBars.Any(b => b.Message.Contains("1.7.0")) && f.UpdateButtonLabel.StartsWith("●"), "「あとで」でお知らせは消えるが、ボタンの印は残る");
+            Check(!f.NoticeBars.Any(b => b.Message.Contains("1.8.0")) && f.UpdateButtonLabel.StartsWith("●"), "「あとで」でお知らせは消えるが、ボタンの印は残る");
 
             // 今すぐアップデート: ダウンロード失敗 → 案内
             msgs.Clear();
@@ -290,12 +290,12 @@ static class OnlineUpdateTests
             http.Ok(rel.Checksum.Url, H.OnlineUpdate.Sha256Hex(pkg) + "  " + rel.Package.Name + "\n");
             f.BuildUpdateMenu();
             u.StartUpdate();
-            var expectPath = Path.Combine(dl, "TealSuite-update-1.7.0.tealupdate");
-            Check(launched.Count == 1 && launched[0] == "TealUpdater.exe \"" + expectPath + "\" --expect-version \"1.7.0\"", "ダウンロード → TealUpdater に渡す: " + (launched.Count > 0 ? launched[0] : "(なし)"));
+            var expectPath = Path.Combine(dl, "TealSuite-update-1.8.0.tealupdate");
+            Check(launched.Count == 1 && launched[0] == "TealUpdater.exe \"" + expectPath + "\" --expect-version \"1.8.0\"", "ダウンロード → TealUpdater に渡す: " + (launched.Count > 0 ? launched[0] : "(なし)"));
             Check(File.Exists(expectPath) && !u.Downloading && u.DownloadPercent == -1, "ダウンロード先は TealSuite-download");
 
             // 最新になったら印は消える
-            http.Ok(api, Encoding.UTF8.GetString(json).Replace("v1.7.0\"", "v1.6.0\""));
+            http.Ok(api, Encoding.UTF8.GetString(json).Replace("v1.8.0\"", "v1.7.0\""));
             msgs.Clear();
             u.CheckNow();
             Check(u.Available == null && f.UpdateButtonLabel == "アップデート ▾" && msgs.Count == 1 && msgs[0].Contains("最新"), "最新なら印を消して「最新のバージョンです」");

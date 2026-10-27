@@ -10,6 +10,8 @@ Windows 用の小さなアプリ群「Teal ○○」です。すべて **C# 5 / 
 | `TealMemo` | Teal Memo | メモ | Memo |
 | `TealClip` | Teal Clip | コピー履歴 | ClipboardHistory |
 | `TealVolume` | Teal Volume | 音量操作 | VolumeMixer |
+| `TealSub` | Teal Sub | サブスク整理 | (なし。1.7.0 で追加) |
+| `TealTasks` | Teal Tasks | タスク管理＆カレンダー | (なし。1.7.0 で追加) |
 
 ## フォルダ構成
 
@@ -154,7 +156,7 @@ DPAPI の追加エントロピー (`Vault.cs` の `"AppSuite.PasswordMaker.vault
 ### C# の書き方の制約
 Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `-langversion:5` を付けています。
 `?.`、`$"..."`、`nameof`、`=>` のメンバー、getter のみの自動プロパティ、`out var` は使えません。
-ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume`。
+ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume` / `TealSuite.Sub` / `TealSuite.Tasks`。
 
 ## 色 (Theme.cs)
 
@@ -175,7 +177,8 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 初期設定: Teal Clip だけオン (起動している間だけコピーを記録するため)。ほかはオフ。Teal Hub は常に常駐
+- 初期設定: Teal Clip・Teal Sub・Teal Tasks がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
+  各アプリの `Program.ResidentByDefault`)。ほかはオフ。設定ページの説明文は apps.json の `residentNote`。Teal Hub は常に常駐
   (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
 - 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
   バルーンで案内 (tray.json の `trayTipShown`)。`--startup` では画面を出さずに通知領域で待つ。終了は通知領域の「終了」
@@ -315,6 +318,29 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 配布は GitHub Actions が作る (上の「リリース」)。手動なら `./build.sh package-update` で作るアップデート ファイル。
 保存形式を変えるときは各ファイルの `version` を上げ、古い形式を読めるようにしておくこと。
 
+## Teal Sub と Teal Tasks (1.7.0)
+
+どちらも **AI・ネットワークを使わない** (HttpClient / WebRequest を参照しない)。データは `DataStore` の JSON だけ。
+画面以外のロジックは静的クラスにまとめ、`DateTime today/now` を引数で受け取る (テストで日付を固定できる)。
+
+- Teal Sub (`src/Apps/TealSub/`)
+  - `SubModel.cs` … `Subscription` (金額は円の整数 `long`、周期 Monthly / Yearly / Weekly / EveryNMonths、無料期間、最後に使った日、使う頻度、状態)・`SubData` (subs.json)
+  - `SubLogic.cs` … 次の更新日 (`NextRenewal`。開始日から n 回目を `AddMonths` で求めるので 1/31 → 2/28 → 3/31 とずれない)、
+    月・年あたりの金額 (週払いは ×52÷12)、カテゴリ別、見直しの点数 (`Review`。最大 100、30 点以上が候補、60 点以上が「おすすめ」)、
+    お知らせ (`DueNotices`。`id|renew|日付` の印で 1 回だけ)、CSV、解約ページの URL は http / https だけ (`IsOpenableUrl`)
+  - `SubForms.cs` … 追加・編集、解約ガイド、設定。`MainForm.cs` … ダッシュボード / 一覧 / 見直し候補 / 解約済み
+  - 引数: `--tab=dashboard|list|review|cancelled`
+- Teal Tasks (`src/Apps/TealTasks/`)
+  - `QuickParser.cs` … 「明日15時 歯医者 #病院」などの日本語の 1 行を `ParseResult` に。全角は先に半角へ (`Normalize`)。
+    時刻だけで過ぎていれば明日、「1〜6 時」は午後、1 週間以上前の M/D は来年
+  - `TaskLogic.cs` … おすすめ順の点数 (`Score`)、今日のリスト、くり返しの次の回 (`NextDue`。たまった分は飛ばす)、
+    完了 / 取り消し (作った次の回を消す)、お知らせ (`DueNotices`。期限を変えたら印が変わるのでもう一度出る)、統計、CSV、見本データ
+  - `CalendarView.cs` … 月・週・日の自前描画 (ドラッグで移動、週・日は 15 分きざみ)。`Control` のメンバーと名前がぶつからないよう `Day` / `MoveDay`
+  - `TaskForms.cs` … 詳しい追加・編集、設定。`MainForm.cs` … 入力欄・今日 / カレンダー / 一覧 / 統計・元に戻す (1 段)
+  - 引数: `--tab=today|calendar|list|stats` (1〜4 でも可)、`--cal=month|week|day`
+- お知らせは起動している間だけ (NotifyIcon のバルーン)。最初は 5 秒後、その後 30 秒ごとに確認する
+- ショートカットの初期設定はなし (apps.json の `shortcuts` の `default` が空)
+
 ## ビルド
 
 - Linux: `sudo apt install mono-devel` → `./build.sh` (特定のアプリだけ: `./build.sh TealMemo TealVolume`)
@@ -338,8 +364,13 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
 - テストは tests/SmokeTests.cs (全体)、CHTests.cs (Teal Clip)、VMTests.cs (Teal Volume)、StartupTests.cs (スタートアップのロジックと Teal Hub のカード)、
   HotkeyTests.cs (ショートカットの決まり・登録の失敗、Teal Volume の常駐オン・オフ・Hotkey イベント・設定)、
   ShortcutTests.cs (受け持ち・重複・解除・Hub の画面)、UpdaterTests.cs (マニフェスト・ハッシュ・適用と元に戻す・apps.json のマージ・確認画面)、
-  OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)
-- Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / settings:<AppId>) (ビルド方法はファイルの先頭)
+  OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)、
+  SubTasksTests.cs (Teal Sub の更新日・合計・見直しの点数・お知らせ、Teal Tasks の入力の読み取り・おすすめ順・くり返し・お知らせ・統計・画面)
+- Teal Sub / Teal Tasks の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
+  `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealTasks/TealTasks.exe out.png`。
+  時刻で見た目が変わるので、README の画像は `faketime -f "@2026-10-27 09:20:00"` を前に付けて撮った (seed も同じ時刻で)。
+  お知らせのバルーンは起動 5 秒後に出るので、待ち時間は 4 秒にする
+- Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / main:tall (全アプリが入る高さ) / settings:<AppId>) (ビルド方法はファイルの先頭)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
 - ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できないので、実機の Windows で確認する。

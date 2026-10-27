@@ -4,6 +4,8 @@
 //  - 常駐オフ (初期設定): ×で閉じると終了 (今までどおり)。--startup では最小化で起動
 //  - Teal Hub のショートカット (Hotkey イベント): 後ろにある / 隠れている → 前面へ、前面にある → 隠す (オフなら最小化)
 //  - Teal Hub が設定を変えたら (Reload イベント) 読み直す。常駐をオフにしたとき画面が隠れていれば終了する
+//  - Notify(): 通知領域のバルーンでお知らせ (1.7.0 から。Teal Sub・Teal Tasks のリマインダー)。
+//    常駐オフのときは、お知らせの間だけアイコンを出して、しばらくしたら消す
 using System;
 using System.Drawing;
 using System.Runtime.Serialization;
@@ -33,6 +35,14 @@ namespace TealSuite.Common
         public bool IsExited { get { return exiting; } }
         public bool IsResident { get { return resident; } }
         public bool TrayVisible { get { return tray != null && tray.Visible; } }
+        /// <summary>いま動いている常駐の仕組み (アプリに 1 つ)。お知らせを出すときに使う</summary>
+        public static ResidentContext Current { get; private set; }
+        /// <summary>お知らせ (バルーン) がクリックされたとき。null なら画面を開くだけ</summary>
+        public Action BalloonClicked;
+        /// <summary>テスト用: 最後に出したお知らせ</summary>
+        public string LastNotice { get; private set; }
+        public int NoticeCount { get; private set; }
+        Timer hideTempTray;
 
         public ResidentContext(Form window) : this(window, false, AppHost.StartedAtLogin) { }
 
@@ -42,6 +52,7 @@ namespace TealSuite.Common
             Window = window;
             this.builtInResident = builtInResident;
             MainForm = window;
+            Current = this;
             state = DataStore.LoadQuiet(StateFile, () => new TrayState());
             resident = ReadResident();
             window.FormClosing += OnClosing;
@@ -69,9 +80,16 @@ namespace TealSuite.Common
         {
             if (!resident)
             {
-                if (tray != null) tray.Visible = false;
+                if (tray != null && (hideTempTray == null || !hideTempTray.Enabled)) tray.Visible = false;
                 return;
             }
+            if (hideTempTray != null) hideTempTray.Stop();
+            EnsureTray();
+            tray.Visible = true;
+        }
+
+        void EnsureTray()
+        {
             if (tray == null)
             {
                 tray = new NotifyIcon();
@@ -84,8 +102,38 @@ namespace TealSuite.Common
                 try { tray.Icon = new Icon(Theme.AppIcon, SystemInformation.SmallIconSize); } catch { tray.Icon = Theme.AppIcon; }
                 tray.Text = AppInfo.DisplayName.Length > 63 ? AppInfo.DisplayName.Substring(0, 63) : AppInfo.DisplayName;
                 tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) { if (WindowShown) HideWindow(); else ShowWindow(); } };
+                tray.BalloonTipClicked += (s, e) =>
+                {
+                    if (BalloonClicked != null) BalloonClicked(); else ShowWindow();
+                };
             }
-            tray.Visible = true;
+        }
+
+        /// <summary>通知領域のバルーンでお知らせする。常駐オフでも、お知らせの間だけアイコンを出す</summary>
+        public bool Notify(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
+        {
+            if (exiting) return false;
+            LastNotice = title + "\n" + text;
+            NoticeCount++;
+            try
+            {
+                EnsureTray();
+                if (!resident)
+                {
+                    tray.Visible = true;
+                    if (hideTempTray == null)
+                    {
+                        hideTempTray = new Timer { Interval = 15000 };
+                        hideTempTray.Tick += (s, e) => { hideTempTray.Stop(); if (!resident && tray != null) tray.Visible = false; };
+                    }
+                    hideTempTray.Stop(); hideTempTray.Start();
+                }
+                if (title.Length > 63) title = title.Substring(0, 63);
+                if (text.Length > 255) text = text.Substring(0, 252) + "…";
+                tray.ShowBalloonTip(10000, title, text, icon);
+                return true;
+            }
+            catch (Exception ex) { DataStore.Log("notify: " + ex.Message); return false; }
         }
 
         public bool WindowShown { get { return !Window.IsDisposed && Window.Visible && Window.WindowState != FormWindowState.Minimized; } }
@@ -171,6 +219,7 @@ namespace TealSuite.Common
         void Finish()
         {
             exiting = true;
+            try { if (hideTempTray != null) hideTempTray.Stop(); } catch { }
             try { if (tray != null) { tray.Visible = false; tray.Dispose(); } } catch { }
             ExitAction();
         }

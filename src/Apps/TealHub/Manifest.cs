@@ -26,6 +26,8 @@ namespace TealSuite.Hub
         [DataMember(Name = "shortcuts", Order = 10, EmitDefaultValue = false)] public List<ShortcutDecl> Shortcuts;
         /// <summary>通知領域に常駐するアプリなら true (アップデート後は --startup で静かに起動し直す)</summary>
         [DataMember(Name = "resident", Order = 11, EmitDefaultValue = false)] public bool Resident;
+        /// <summary>常駐の欄に出す補足 (例: 「お知らせは起動している間だけ出ます」)。常駐オフのときは「注意:」付きで目立たせる。省略可</summary>
+        [DataMember(Name = "residentNote", Order = 12, EmitDefaultValue = false)] public string ResidentNote;
 
         /// <summary>apps.json の場所を基準にした exe の絶対パス</summary>
         [IgnoreDataMember] public string ExePath;

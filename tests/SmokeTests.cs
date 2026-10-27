@@ -53,6 +53,9 @@ static class SmokeTests
         Run("アップデート: TealUpdater の画面", () => UpdaterTests.RunForm(Check, tmp));
         Run("オンライン アップデート: バージョン・リリース・sha256・接続先・ダウンロード", () => OnlineUpdateTests.RunLogic(Check, tmp, dist));
         Run("オンライン アップデート: お知らせ・ボタン・メニュー・TealUpdater へ", () => OnlineUpdateTests.RunUi(Check, tmp, dist));
+        Run("Teal Sub: 更新日・合計・見直し候補・お知らせ", () => SubTasksTests.RunSub(Check));
+        Run("Teal Tasks: ひとこと入力・優先度・くり返し・お知らせ・統計", () => SubTasksTests.RunTasks(Check));
+        Run("Teal Tasks / Teal Sub: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
@@ -140,16 +143,16 @@ static class SmokeTests
     {
         var path = Path.Combine(dist, "apps.json");
         var apps = AM::TealSuite.Hub.Manifest.Load(path);
-        Check(apps.Count == 4, "Teal Hub 自身を除いて 4 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
+        Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.6.0"), "バージョン 1.6.0");
+        Check(apps.All(a => a.Version == "1.7.0"), "バージョン 1.7.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
-        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" } };
+        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealSub", null }, { "TealTasks", null } };
         var all = AM::TealSuite.Hub.Manifest.Load(path, true);
-        Check(all.Count == 5 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 5 件 (Teal Hub を含む)");
+        Check(all.Count == 7 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 7 件 (Teal Hub を含む)");
         foreach (var a in all)
         {
             var asm = System.Reflection.Assembly.LoadFrom(a.ExePath);
@@ -158,9 +161,9 @@ static class SmokeTests
             Func<string, object> F = n => spec.GetType().GetField(n).GetValue(spec);
             var ids = (string[])F("LegacyIds");
             var ver = asm.GetName().Version;
-            Check((string)F("Id") == a.Id && (string)F("Name") == a.Name && (string)F("Role") == a.Role && ids.Length == 1 && ids[0] == legacy[a.Id] && ver.ToString(3) == a.Version
+            Check((string)F("Id") == a.Id && (string)F("Name") == a.Name && (string)F("Role") == a.Role && (legacy[a.Id] == null ? ids.Length == 0 : ids.Length == 1 && ids[0] == legacy[a.Id]) && ver.ToString(3) == a.Version
                 && a.LegacyIds != null && a.LegacyIds.SequenceEqual(ids),
-                a.Name + " — " + a.Role + "  (" + Path.GetFileName(a.ExePath) + ", v" + ver.ToString(3) + ", 旧 ID " + ids[0] + ")");
+                a.Name + " — " + a.Role + "  (" + Path.GetFileName(a.ExePath) + ", v" + ver.ToString(3) + (ids.Length > 0 ? ", 旧 ID " + ids[0] : ", 新しいアプリ") + ")");
         }
     }
 
@@ -286,6 +289,7 @@ static class SmokeTests
         add("読みたい本\r\n・三体\r\n・プロジェクト・ヘイル・メアリー", 30);
         add("Wi-Fi の場所\r\nルーターは本棚の上。再起動はコンセントを抜いて 10 秒", 72);
         MEMO::TealSuite.Memo.NoteStore.Save(notes);
+        SubTasksTests.Seed(dir);
         Console.WriteLine("seeded " + dir);
     }
 }

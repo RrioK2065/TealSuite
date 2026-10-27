@@ -1,5 +1,5 @@
 // 開発用: Teal Hub の画面をスクリーンショット用に開く (Xvfb 上で tests/shot.sh から使う。配布物には入れない)
-//   mono build/HubShots.exe main|settings:<AppId>   (例: settings:TealClip、settings:TealHub)
+//   mono build/HubShots.exe main|main:tall|settings:<AppId>   (例: settings:TealClip、settings:TealHub。main:tall は全アプリが入る高さで開く)
 //   アップデートのお知らせ: TEALSUITE_UPDATE_API=tests/fixtures/release-latest.json で main (起動 5 秒後に確認する)
 //   ビルド: I=assets/icons/TealHub; mcs -out:build/HubShots.exe -codepage:utf8 -langversion:5 -win32icon:$I.ico -resource:$I.ico,AppIcon.ico -resource:$I.png,AppIcon.png -r:AM=dist/TealSuite/TealHub.exe -r:System.Windows.Forms.dll -r:System.Drawing.dll tests/hub_shots.cs
 //          (build/ に dist/TealSuite の TealHub.exe・apps.json・apps をコピーしておく)
@@ -10,7 +10,7 @@ using System.Linq;
 using System.Windows.Forms;
 using C = AM::TealSuite.Common;
 using H = AM::TealSuite.Hub;
-[assembly: System.Reflection.AssemblyVersion("1.6.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.0.0")]
 
 static class HubShots
 {
@@ -33,6 +33,7 @@ static class HubShots
         tray.ExitAction = Application.Exit;
         tray.Window.StartPosition = FormStartPosition.Manual;
         tray.Window.Location = new System.Drawing.Point(0, 0);
+        if (mode == "main:tall") tray.Window.Height = 990;
         if (mode.StartsWith("settings:")) tray.Window.ShowSettings(mode.Substring(9));
         Application.Run(tray);
     }

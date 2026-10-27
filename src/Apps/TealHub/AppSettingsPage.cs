@@ -315,6 +315,7 @@ namespace TealSuite.Hub
             {
                 case "TealClip": return "押すと、コピーの履歴をその場に呼び出します (選ぶと貼り付け)。";
                 case "TealVolume": return "押すと、音量ミキサーを開きます (前面にあるときは隠します)。";
+                case "TealTasks": return "押すと、Teal Tasks の画面を前面に出します (すぐにひとこと入力でタスクを追加できます)。";
                 default: return "押すと、" + app.Name + " の画面を前面に出します (前面にあるときは隠します)。";
             }
         }
@@ -441,6 +442,13 @@ namespace TealSuite.Hub
                     clipNote.Text = resident
                         ? "Teal Clip は起動している間だけコピーを記録します。常駐していれば、画面を閉じても記録を続けます。"
                         : "注意: Teal Clip は起動している間だけコピーを記録します。常駐をオフにすると、閉じている間のコピーは履歴に残りません。";
+                    clipNote.ForeColor = resident ? Theme.SubText : Theme.Warning;
+                }
+                else if (app != null && !string.IsNullOrEmpty(app.ResidentNote))
+                {
+                    clipNote.Text = resident
+                        ? app.ResidentNote + "常駐していれば、画面を閉じてもお知らせが届きます。"
+                        : "注意: " + app.ResidentNote + "常駐をオフにすると、閉じている間はお知らせが出ません。";
                     clipNote.ForeColor = resident ? Theme.SubText : Theme.Warning;
                 }
                 else clipNote.Text = "";

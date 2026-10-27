@@ -119,6 +119,32 @@ def g_updater(d):
     d.polygon([(400, 560), (624, 560), (512, 690)], fill=255)
 
 
+def g_sub(d):
+    # 回る矢印 (毎月の更新) + 中央に「¥」
+    arc_band(d, 512, 512, 310, 76, 230, 520, 255)
+    d.polygon([(232, 372), (330, 210), (398, 380)], fill=255)
+    # ¥: 2 本の斜めの線 + 縦棒 + 横棒 2 本
+    d.line([(424, 372), (512, 510)], fill=255, width=64)
+    d.line([(600, 372), (512, 510)], fill=255, width=64)
+    for x, y in ((424, 372), (600, 372)):
+        d.ellipse([x - 32, y - 32, x + 32, y + 32], fill=255)
+    d.rounded_rectangle([480, 480, 544, 700], radius=28, fill=255)
+    d.rounded_rectangle([410, 528, 614, 572], radius=20, fill=255)
+    d.rounded_rectangle([410, 606, 614, 650], radius=20, fill=255)
+
+
+def g_tasks(d):
+    # カレンダー + チェックマーク
+    d.rounded_rectangle([238, 262, 786, 806], radius=72, fill=255)
+    d.rectangle([238, 400, 786, 430], fill=0)
+    for x in (380, 644):
+        d.rounded_rectangle([x - 34, 196, x + 34, 330], radius=34, fill=0)
+        d.rounded_rectangle([x - 20, 206, x + 20, 320], radius=20, fill=255)
+    d.line([(370, 610), (470, 705), (660, 505)], fill=0, width=78, joint="curve")
+    for x, y in ((370, 610), (660, 505)):
+        d.ellipse([x - 39, y - 39, x + 39, y + 39], fill=0)
+
+
 GLYPHS = {
     "TealHub": g_appmanager,
     "TealPass": g_password,
@@ -126,6 +152,8 @@ GLYPHS = {
     "TealClip": g_clipboard,
     "TealVolume": g_volume,
     "TealUpdater": g_updater,
+    "TealSub": g_sub,
+    "TealTasks": g_tasks,
 }
 
 
