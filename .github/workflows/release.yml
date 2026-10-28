@@ -141,7 +141,7 @@ jobs:
       - name: 配布物を展開する
         run: |
           $zip = "release\TealSuite-$env:VER.zip"
-          # ASCII only: Windows PowerShell 5.1 reads this file as cp1252, and UTF-8 ん (byte 0x93) is a smart quote.
+          # ASCII only in this script: Windows PowerShell 5.1 reads it as cp1252, and some UTF-8 bytes are smart quotes.
           if (-not (Test-Path $zip)) { throw "missing $zip" }
           # separate copies: tests, smoke, and an untouched tree for hash compare
           foreach ($d in "shipped", "shipped-tests", "shipped-smoke") { Expand-Archive -Path $zip -DestinationPath $d }
