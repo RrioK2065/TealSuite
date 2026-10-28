@@ -131,7 +131,9 @@ namespace TealSuite.Pass
 
             var o = settings.Generator;
             tUpper.Checked = o.Upper; tLower.Checked = o.Lower; tDigits.Checked = o.Digits; tSymbols.Checked = o.Symbols; tAmbig.Checked = o.ExcludeAmbiguous;
-            var toggles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Theme.Surface, Padding = Theme.P(0, 4, 0, 0) };
+            // AutoSize の FlowLayoutPanel を Dock=Top にすると、Windows のレイアウトが再入してスタックが溢れる
+            var toggles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = false, BackColor = Theme.Surface, Padding = Theme.P(0, 4, 0, 0) };
+            int togglesH = toggles.Padding.Vertical;
             foreach (var t in new[] { tUpper, tLower, tDigits, tSymbols, tAmbig })
             {
                 var tt = t;
@@ -141,7 +143,9 @@ namespace TealSuite.Pass
                     if (built) Regenerate();
                 };
                 toggles.Controls.Add(tt);
+                togglesH += tt.GetPreferredSize(Size.Empty).Height + tt.Margin.Vertical;
             }
+            toggles.Height = togglesH;
             var hint = new Label { Text = "Shift を押しながらドラッグで 4 文字ずつ", Font = Theme.Small, ForeColor = Theme.Disabled, Height = Theme.Small.Height + Theme.S(4), UseMnemonic = false };
             Ly.Stack(card, genFrame, Ui.Spacer(8), genStrength, Ui.Spacer(4), row, Ui.Spacer(10), lenRow, lenSlider, hint, Ly.SectionLabel("使う文字"), toggles);
             built = true;

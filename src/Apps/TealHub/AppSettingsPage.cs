@@ -151,6 +151,7 @@ namespace TealSuite.Hub
         Label keyStatus, keyMessage, residentNote, clipNote, startupNote;
         bool updating;
         string startupKey;
+        bool rebuilding;
 
         /// <summary>表示中のアプリ (Teal Hub 自身なら "TealHub")</summary>
         public string AppId { get { return app == null ? Program.Id : app.Id; } }
@@ -216,6 +217,12 @@ namespace TealSuite.Hub
         public void ShowFor(AppEntry appEntry)
         {
             if (Box_Focused()) { BtnBack.Focus(); shortcuts.ResumeAll(); }
+            // Windows では Dispose が Leave を起こし、作り直し中の RefreshState が
+            // 捨てるラベルに文字を書いて startupKey を進めてしまう。その間は無視する。
+            rebuilding = true;
+            bool builtOk = false;
+            try
+            {
             app = appEntry;
             slot = app == null ? shortcuts.Self : shortcuts.For(app.Id);
             startupKey = null;
@@ -245,7 +252,10 @@ namespace TealSuite.Hub
             foreach (var c in new Control[] { keyCard, residentCard, startupCard }) { c.Margin = new Padding(0, 0, 0, Theme.S(12)); body.Controls.Add(c); }
             FitCards();
             body.ResumeLayout();
-            RefreshState();
+            builtOk = true;
+            }
+            finally { rebuilding = false; }
+            if (builtOk) RefreshState();
         }
 
         // ---------- ショートカット ----------
@@ -412,7 +422,7 @@ namespace TealSuite.Hub
         /// <summary>今の状態 (ショートカット・常駐・スタートアップ) を表示に反映する</summary>
         public void RefreshState()
         {
-            if (slot == null || keyCard == null || IsDisposed) return;
+            if (rebuilding || slot == null || keyCard == null || IsDisposed) return;
             // スロットは Load (再読み込み) で作り直されるので、取り直す
             var fresh = app == null ? shortcuts.Self : shortcuts.For(app.Id);
             if (fresh != null) slot = fresh;
