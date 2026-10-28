@@ -23,7 +23,7 @@ namespace TealSuite.Tasks
     public static class TaskLogic
     {
         public static readonly string[] PriorityLabels = { "低", "中", "高" };
-        public static readonly string[] RepeatLabels = { "くり返さない", "毎日", "毎週", "毎月" };
+        public static readonly string[] RepeatLabels = { "くり返さない", "毎日", "毎週", "毎月", "平日 (月〜金)", "毎年" };
         /// <summary>かかる時間の選択肢 (分)</summary>
         public static readonly int[] DurationChoices = { 0, 15, 30, 45, 60, 90, 120, 180, 240 };
 
@@ -120,6 +120,17 @@ namespace TealSuite.Tasks
             {
                 if (r == Repeat.Daily) d = d.AddDays(1);
                 else if (r == Repeat.Weekly) d = d.AddDays(7);
+                else if (r == Repeat.Weekdays)
+                {
+                    d = d.AddDays(1);
+                    while (d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday) d = d.AddDays(1);
+                }
+                else if (r == Repeat.Yearly)
+                {
+                    int n = 0; var x = due;
+                    while (x <= d) { n++; x = AddMonthsKeep(due, 12 * n); }
+                    d = x;
+                }
                 else if (r == Repeat.Monthly)
                 {
                     // 31 日などは月末に寄せるが、元の日を覚えておく (1/31 → 2/28 → 3/31)

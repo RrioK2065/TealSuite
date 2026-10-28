@@ -5,6 +5,7 @@
 //  - ショートカット (初期設定 Alt+V) は Teal Hub が受け付け、Hotkey イベントで開く / 隠すを頼んでくる
 //  - --startup (ログイン時の自動起動) では画面を出さずに常駐する (常駐オフなら何もせず終了)
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
@@ -17,6 +18,21 @@ namespace TealSuite.Volume
     {
         [DataMember(Name = "hotkey", Order = 1)] public string Hotkey = VolumeTray.DefaultHotkey.ToString();
         [DataMember(Name = "trayTipShown", Order = 2)] public bool TrayTipShown;
+        /// <summary>1.8.0: 音量のプリセット</summary>
+        [DataMember(Name = "presets", Order = 3, EmitDefaultValue = false)] public List<VolumePreset> Presets;
+        /// <summary>1.8.0: 上に固定したアプリ (exe のパス)</summary>
+        [DataMember(Name = "pinned", Order = 4, EmitDefaultValue = false)] public List<string> Pinned;
+        /// <summary>1.8.0: 一覧に出さないアプリ (exe のパス)</summary>
+        [DataMember(Name = "hidden", Order = 5, EmitDefaultValue = false)] public List<string> Hidden;
+
+        public void Normalize()
+        {
+            if (Presets == null) Presets = new List<VolumePreset>();
+            if (Pinned == null) Pinned = new List<string>();
+            if (Hidden == null) Hidden = new List<string>();
+            Presets.RemoveAll(p => p == null || string.IsNullOrWhiteSpace(p.Name));
+            foreach (var p in Presets) if (p.Apps == null) p.Apps = new List<PresetApp>();
+        }
     }
 
     public class VolumeTray : ApplicationContext
@@ -44,9 +60,12 @@ namespace TealSuite.Volume
         public VolumeTray(string[] args, bool startHidden)
         {
             settings = DataStore.LoadQuiet(SettingsFile, () => new VmSettings());
+            settings.Normalize();
             LoadPrefs();
 
             Window = new MainForm();
+            Window.Prefs = settings;
+            Window.SavePrefs = () => DataStore.TrySave(SettingsFile, settings);
             Window.HideRequested += HideWindow;
             Window.SettingsRequested += ShowSettings;
             Window.FormClosed += (s, e) => { if (!exiting) ExitApp(); };   // Windows の終了 (シャットダウン) など
@@ -54,6 +73,22 @@ namespace TealSuite.Volume
 
             var menu = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
             menu.Items.Add(new ToolStripMenuItem("開く", null, (s, e) => ShowWindow()) { Font = Theme.Bold });
+            var miMute = new ToolStripMenuItem("すべてのアプリをミュート", null, (s, e) => Window.ToggleMuteAll());
+            var miPresets = new ToolStripMenuItem("プリセット");
+            menu.Items.Add(miMute);
+            menu.Items.Add(miPresets);
+            menu.Opening += (s, e) =>
+            {
+                miMute.Text = Window.AllAppsMuted() ? "すべてのアプリのミュートを解除" : "すべてのアプリをミュート";
+                miPresets.DropDownItems.Clear();
+                foreach (var p in settings.Presets.ToArray())
+                {
+                    var pp = p;
+                    miPresets.DropDownItems.Add(new ToolStripMenuItem(p.Name, null, (s2, e2) => Window.ApplyPreset(pp)));
+                }
+                if (settings.Presets.Count == 0) miPresets.DropDownItems.Add(new ToolStripMenuItem("(まだありません。画面の「プリセット」で保存できます)") { Enabled = false });
+            };
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("設定 (Teal Hub)…", null, (s, e) => ShowSettings()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("終了", null, (s, e) => ExitApp()));

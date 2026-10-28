@@ -74,6 +74,8 @@ namespace TealSuite.Tasks
             s = Take(s, @"(いつか|余裕があれば|ひまなとき|暇なとき)", x => { if (!r.Priority.HasValue) r.Priority = TaskItem.Low; });
 
             // くり返し
+            s = Take(s, @"(毎平日|平日は?毎日|平日)", x => r.Repeat = Repeat.Weekdays);
+            s = Take(s, @"(毎年|年に一度|年1回)", x => r.Repeat = Repeat.Yearly);
             s = Take(s, @"毎日", x => r.Repeat = Repeat.Daily);
             s = Take(s, @"毎月", x => r.Repeat = Repeat.Monthly);
             s = Take(s, @"毎週", x => r.Repeat = Repeat.Weekly);
@@ -165,6 +167,9 @@ namespace TealSuite.Tasks
             }
             r.Date = date;
             if (r.Repeat != Repeat.None && !r.Date.HasValue) r.Date = today;
+            // 平日のくり返しで、土日になったら次の月曜から
+            if (r.Repeat == Repeat.Weekdays && r.Date.HasValue)
+                while (r.Date.Value.DayOfWeek == DayOfWeek.Saturday || r.Date.Value.DayOfWeek == DayOfWeek.Sunday) r.Date = r.Date.Value.AddDays(1);
 
             r.Title = CleanTitle(s);
             return r;

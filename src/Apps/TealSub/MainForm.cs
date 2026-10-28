@@ -54,6 +54,9 @@ namespace TealSuite.Sub
 
             header = HeaderBar.ForApp("このパソコンの中だけで管理します");
             var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Secondary).FitWidth(72));
+            var btnPlan = header.AddAction(new FlatButton("支払い予定", ButtonKind.Secondary).FitWidth(88));
+            btnPlan.Click += (s, e) => ShowForecast();
+            tips.SetToolTip(btnPlan, "これから 12 か月の支払いと、支払い方法ごとの金額 (Ctrl+P)");
             var btnAdd = header.AddAction(new FlatButton("＋ 追加", ButtonKind.Primary).FitWidth(96));
             btnAdd.Click += (s, e) => AddNew();
             btnSettings.Click += (s, e) => OpenSettings();
@@ -151,6 +154,7 @@ namespace TealSuite.Sub
             switch (keyData)
             {
                 case Keys.Control | Keys.N: AddNew(); return true;
+                case Keys.Control | Keys.P: ShowForecast(); return true;
                 case Keys.Control | Keys.D1: Tabs.SelectedIndex = 0; return true;
                 case Keys.Control | Keys.D2: Tabs.SelectedIndex = 1; return true;
                 case Keys.Control | Keys.D3: Tabs.SelectedIndex = 2; return true;
@@ -188,10 +192,18 @@ namespace TealSuite.Sub
             var copy = s.Clone();
             using (var f = new SubEditForm(copy, false))
                 if (f.ShowDialog(this) != DialogResult.OK) return;
+            ApplyEdit(s, copy);
+        }
+
+        /// <summary>編集の結果を反映する (金額が変わっていたら料金の変更履歴に残す)</summary>
+        public void ApplyEdit(Subscription s, Subscription copy)
+        {
+            bool changed = SubPlan.RecordPrice(s.Amount, copy, Today);
             int i = Data.Subs.IndexOf(s);
             if (i >= 0) Data.Subs[i] = copy;
             Save(); RefreshAll();
             SelectInList(copy);
+            if (changed) footer.StatusText = "「" + copy.Name + "」の料金の変更を記録しました (" + Fmt.Yen(s.Amount) + " → " + Fmt.Yen(copy.Amount) + ")";
         }
 
         void Delete(Subscription s)
@@ -243,7 +255,7 @@ namespace TealSuite.Sub
         void OpenSettings()
         {
             bool res = resident != null && resident.IsResident;
-            using (var f = new SubSettingsForm(Data.Settings, res, ExportCsv, Backup, Restore))
+            using (var f = new SubSettingsForm(Data.Settings, res, ExportCsv, Backup, Restore, ImportCsv))
                 if (f.ShowDialog(this) != DialogResult.OK) return;
             Data.Normalize();
             Save(); RefreshAll();
@@ -255,6 +267,38 @@ namespace TealSuite.Sub
             var p = FileKit.SaveText(this, SubLogic.ToCsv(Data.Subs, Today), "サブスク一覧-" + DateTime.Now.ToString("yyyyMMdd") + ".csv", "CSV (*.csv)|*.csv");
             if (p != null) footer.StatusText = "CSV に書き出しました: " + p;
         }
+        /// <summary>これから 12 か月の支払い予定</summary>
+        public void ShowForecast()
+        {
+            using (var f = new ForecastForm(Data.Subs, Today, Data.Settings.MonthlyBudget)) f.ShowDialog(this);
+        }
+
+        void ImportCsv()
+        {
+            string text;
+            using (var dlg = new OpenFileDialog { Title = "CSV から読み込む", Filter = "CSV (*.csv)|*.csv|すべてのファイル (*.*)|*.*" })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                try { text = TextKit.Decode(System.IO.File.ReadAllBytes(dlg.FileName)); }
+                catch (Exception ex) { Dialogs.Error(this, "読み込めませんでした。\n\n" + ex.Message); return; }
+            }
+            ImportCsvText(text, true);
+        }
+
+        /// <summary>CSV の中身から追加する (同じ名前・金額・周期のものは飛ばす)。追加した件数 (失敗は -1)</summary>
+        public int ImportCsvText(string text, bool ask)
+        {
+            var r = SubPlan.ImportCsv(text, Data.Subs, Today);
+            if (r.Error != null) { if (ask) Dialogs.Warn(this, r.Error); return -1; }
+            if (r.Items.Count == 0) { if (ask) Dialogs.Info(this, "新しく追加するサブスクはありませんでした。" + (r.Duplicates > 0 ? "\n(すでにある " + r.Duplicates + " 件は飛ばしました)" : "")); return 0; }
+            if (ask && !Dialogs.Confirm(this, r.Items.Count + " 件のサブスクを追加しますか?\n\n" + string.Join("、", r.Items.Take(8).Select(x => x.Name)) + (r.Items.Count > 8 ? " ほか" : "")
+                + (r.Duplicates > 0 ? "\n\nすでにある " + r.Duplicates + " 件は飛ばします。" : "") + (r.Skipped > 0 ? "\n読めなかった行 " + r.Skipped + " 件は飛ばします。" : ""), "CSV から読み込む")) return 0;
+            Data.Subs.AddRange(r.Items);
+            Save(); RefreshAll();
+            footer.StatusText = "CSV から " + r.Items.Count + " 件を追加しました";
+            return r.Items.Count;
+        }
+
         void Backup()
         {
             var p = FileKit.ExportJson(this, Data, "TealSub");
@@ -368,14 +412,21 @@ namespace TealSuite.Sub
             var paying = Data.Subs.Where(s => s.Paying).ToList();
             decimal m = SubLogic.MonthlyTotal(Data.Subs), y = SubLogic.YearlyTotal(Data.Subs);
             int trials = paying.Count(s => SubLogic.InTrial(s, today));
-            TileMonthly.Set("月あたりの合計", Fmt.Yen(m), "年払い・週払いも月あたりに換算", Theme.Accent);
+            var budgetLeft = SubPlan.BudgetLeft(Data.Subs, Data.Settings.MonthlyBudget);
+            TileMonthly.Set("月あたりの合計", Fmt.Yen(m), budgetLeft.HasValue ? SubPlan.BudgetText(Data.Subs, Data.Settings.MonthlyBudget) : "年払い・週払いも月あたりに換算",
+                budgetLeft.HasValue && budgetLeft.Value < 0 ? Theme.Danger : Theme.Accent);
             TileYearly.Set("1 年の合計", Fmt.Yen(y), "1 日あたり約 " + Fmt.Yen(y / 365m));
             int cancelling = paying.Count(s => s.Status == SubStatus.Cancelling);
             TileCount.Set("支払い中のサブスク", paying.Count + " 件",
                 (trials > 0 ? "無料期間中 " + trials + " 件" : "無料期間中なし") + (cancelling > 0 ? "  ・  解約予定 " + cancelling + " 件" : ""));
 
             var cands = SubLogic.Candidates(Data.Subs, today);
-            if (cands.Count > 0)
+            if (budgetLeft.HasValue && budgetLeft.Value < 0)
+            {
+                dashAlert.ForeColor = Theme.Danger;
+                dashAlert.Text = "月の予算を " + Fmt.Yen(-budgetLeft.Value) + " 超えています。" + (cands.Count > 0 ? "見直し候補が " + cands.Count + " 件あります  →  「見直し候補」を見る (Ctrl+3)" : "支払い予定 (Ctrl+P) で、どの月にいくら払うか確かめられます。");
+            }
+            else if (cands.Count > 0)
             {
                 dashAlert.ForeColor = Theme.Warning;
                 dashAlert.Text = "見直し候補が " + cands.Count + " 件あります。全部やめると 1 年で最大 " + Fmt.Yen(SubLogic.PossibleSaving(cands)) + " 浮きます  →  「見直し候補」を見る (Ctrl+3)";
@@ -514,6 +565,9 @@ namespace TealSuite.Sub
             int cx = right;
             if (s.Status != SubStatus.Active)
                 cx = Draw.Chip(g, SubLogic.StatusLabel(s.Status), s.Status == SubStatus.Cancelled ? Theme.SubText : Theme.Warning, s.Status == SubStatus.Cancelled ? Theme.SurfaceAlt : Theme.Blend(Theme.Surface, Theme.Warning, 0.15f), cx, y1 + lh / 2, true) - Theme.S(6);
+            var up = SubPlan.RecentIncrease(s, today);
+            if (up != null && s.Paying)
+                cx = Draw.Chip(g, "値上げ +" + Fmt.Yen(up.To - up.From), Theme.Danger, Theme.DangerSoft, cx, y1 + lh / 2, true) - Theme.S(6);
             if (SubLogic.InTrial(s, today))
                 cx = Draw.Chip(g, "無料期間 〜" + Fmt.MonthDay(s.TrialEndDate.Value), Theme.Accent, Theme.AccentSoft, cx, y1 + lh / 2, true) - Theme.S(6);
             Draw.Text(g, s.Name, Theme.Bold, Theme.Text, new Rectangle(x, y1, Math.Max(10, cx - x), lh));

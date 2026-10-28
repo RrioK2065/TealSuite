@@ -249,10 +249,14 @@ static class SubTasksTests
         SUB::TealSuite.Common.AppInfo.Init("TealSub", "Teal Sub", "");
         var sd = new S.SubData();
         sd.Subs.AddRange(S.SubLogic.SampleData(DateTime.Today));
+        sd.Settings.MonthlyBudget = 18000; // 1.8.0: 月の予算 (支払い予定の画面に出る)
         SUB::TealSuite.Common.DataStore.Save(S.SubData.FileName, sd);
         TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
         var td = new T.TaskData();
         td.Tasks.AddRange(T.TaskLogic.SampleData(DateTime.Now));
+        // 1.8.0: テンプレートの見本
+        T.TaskTools.SaveTemplate(td, new T.TaskTemplate { Name = "週次レポート", Task = new T.TaskItem { Title = "週次レポートを送る", Priority = T.TaskItem.High, DurationMin = 30 }, DueDays = 4, Time = "17:00" });
+        T.TaskTools.SaveTemplate(td, new T.TaskTemplate { Name = "買い出し", Task = new T.TaskItem { Title = "スーパーで買い出し", DurationMin = 45 }, DueDays = 0 });
         TASKS::TealSuite.Common.DataStore.Save(T.TaskData.FileName, td);
     }
 }

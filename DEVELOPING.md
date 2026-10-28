@@ -341,6 +341,41 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 - お知らせは起動している間だけ (NotifyIcon のバルーン)。最初は 5 秒後、その後 30 秒ごとに確認する
 - ショートカットの初期設定はなし (apps.json の `shortcuts` の `default` が空)
 
+## 1.8.0 の追加機能 (全アプリ)
+
+どれも **ネットワークを使わない** (Teal Hub の更新の確認だけは今までどおり)。新しい保存項目はすべて `EmitDefaultValue = false` で、
+1.7.0 のファイルはそのまま読める (なければ空・0・null 扱い)。DPAPI のエントロピーと保存形式の印 (Teal Pass の `PMV1` など) は変えていない。
+画面以外のロジックは静的クラスにまとめ、日時は引数で受け取る (tests/V180Tests.cs で日付を固定して確認)。
+
+- Teal Hub
+  - `HubData.cs` … `HubBackup` (`%APPDATA%\TealSuite` 全体を zip に。`Create` / `Inspect` / `Restore`。復元の前に
+    `TealHub\backups\before-restore-….zip` を作る。zip の中の名前は `SafeName` で確かめ、`..`・絶対パスは拒否。
+    データ フォルダーの中への保存は不可)、`ChangeLog` (同梱の CHANGELOG.md を `## x.y.z` ごとに読む)、`WhatsNewForm`
+  - `HubSettings.LastSeenVersion` … 違えばお知らせ バーに「更新内容を見る」(新しい版のお知らせがあるときはそちらを優先)
+  - 参照に `System.IO.Compression.dll` を追加 (`src/Apps/TealHub/refs.txt`。`ZipArchive` だけを使い、`ZipFile` は使わない)
+  - 「その他 ▾」メニュー、通知領域の「アプリを開く ▸」
+- Teal Pass (`PassTools.cs`・`PassDialogs.cs`)
+  - `VaultEntry` に `Favorite`・`History` (以前のパスワード 5 件まで)・`PasswordDate`。`ApplyEdit` で履歴を積む
+  - `Check` … 使い回し・弱い (`StrengthMeter` のレベル 1 以下)・365 日以上・空。`ImportCsv` (Chrome / Edge / Firefox の列名)・`ToCsv`
+- Teal Memo (`NoteStore.cs`)
+  - `Note` に `Pinned`・`InTrash`・`DeletedUtc`。ゴミ箱は 30 日で自動削除 (`PurgeTrash`)。`#タグ` は本文から読む (保存しない)
+  - `MemoSettings` (settings.json) に文字の大きさ。`FromText` / `ToText` で .txt の読み書き
+- Teal Clip (`History.cs`・`ClipDialogs.cs`)
+  - 件数 10 / 20 / 30 / 50 (`Capacity`、ピンは件数 − 1 まで)、`PurgeOlderThan` (自動削除。ピンは消さない)、`AddSnippet` (定型文 = ピン)、`UpdateText`、`Search`
+  - `ClipFilter` … 記録しない言葉・パスワードらしい文字 (空白なし 8〜64 文字で、英大小・数字・記号のうち 3 種以上 など)。一時停止は保存しない
+- Teal Volume (`VolumeLogic.cs`)
+  - `VolumePreset` (アプリのキーごとの音量・ミュート。最大 12。`pid:` のキーは保存しない)、`ToggleMuteAll`、`Arrange` (固定を上・非表示を除く)
+  - `VmSettings` に `Presets`・`Pinned`・`Hidden`
+- Teal Sub (`SubTools.cs`)
+  - `SubPlan.Forecast` (12 か月の支払い予定。解約予定は最後の 1 回まで、無料期間中は出さない)・`ByPayment`・`BudgetText`
+  - `Subscription.PriceHistory` (`RecordPrice`)、`SubSettings.MonthlyBudget`、`ImportCsv` (書き出した CSV と同じ列。同じ名前はとばす)
+  - `ForecastForm` (Ctrl+P・ダッシュボードの「支払い予定」)
+- Teal Tasks (`TaskTools.cs`)
+  - くり返しに `Weekdays` (土日を飛ばす)・`Yearly` (2/29 は平年 2/28)。QuickParser は「平日」「毎平日」「毎年」を読む (「毎日」より先に判定)
+  - `TaskData.Templates` (最大 30。`dueDays` は今日から何日後か、-1 は期限なし)、`ParseBulk` (行頭の記号・番号・`[ ]` を落として 1 行 1 件、最大 200)、
+    `Duplicate`、`CleanupDone` (30 / 90 / 365 日。Ctrl+Z で戻せる。テンプレートは元に戻すの対象外)
+  - 「その他 ▾」は開くたびに作り直す (`BuildMoreMenu`)
+
 ## ビルド
 
 - Linux: `sudo apt install mono-devel` → `./build.sh` (特定のアプリだけ: `./build.sh TealMemo TealVolume`)
@@ -365,12 +400,15 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   HotkeyTests.cs (ショートカットの決まり・登録の失敗、Teal Volume の常駐オン・オフ・Hotkey イベント・設定)、
   ShortcutTests.cs (受け持ち・重複・解除・Hub の画面)、UpdaterTests.cs (マニフェスト・ハッシュ・適用と元に戻す・apps.json のマージ・確認画面)、
   OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)、
-  SubTasksTests.cs (Teal Sub の更新日・合計・見直しの点数・お知らせ、Teal Tasks の入力の読み取り・おすすめ順・くり返し・お知らせ・統計・画面)
+  SubTasksTests.cs (Teal Sub の更新日・合計・見直しの点数・お知らせ、Teal Tasks の入力の読み取り・おすすめ順・くり返し・お知らせ・統計・画面)、
+  V180Tests.cs (1.8.0 の追加機能と、1.7.0 のデータをそのまま読めること)
 - Teal Sub / Teal Tasks の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
   `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealTasks/TealTasks.exe out.png`。
   時刻で見た目が変わるので、README の画像は `faketime -f "@2026-10-27 09:20:00"` を前に付けて撮った (seed も同じ時刻で)。
   お知らせのバルーンは起動 5 秒後に出るので、待ち時間は 4 秒にする
 - Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / main:tall (全アプリが入る高さ) / settings:<AppId>) (ビルド方法はファイルの先頭)
+- 1.8.0 で増えた画面 (メニュー・支払い予定・まとめて追加) の確認: tests/v180_shots.cs をビルドし (方法はファイルの先頭)、
+  `SHOT_ARGS="hub その他" tests/shot.sh build/V180Shots.exe out.png` (hub / volume / sub / tasks に、押すボタンの文字の先頭を付ける。tasks:bulk は「まとめて追加」)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
 - ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できないので、実機の Windows で確認する。

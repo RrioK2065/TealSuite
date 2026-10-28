@@ -62,6 +62,10 @@ namespace TealSuite.Tasks
 
             header = HeaderBar.ForApp("このパソコンの中だけで管理します");
             var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Secondary).FitWidth(72));
+            var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Secondary).FitWidth(80));
+            moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
+            btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
+            tips.SetToolTip(btnMore, "テンプレート・まとめて追加・複製・完了したタスクの整理");
             var btnAdd = header.AddAction(new FlatButton("＋ 追加", ButtonKind.Primary).FitWidth(96));
             btnAdd.Click += (s, e) => AddNew(null, false);
             btnSettings.Click += (s, e) => OpenSettings();
@@ -168,7 +172,9 @@ namespace TealSuite.Tasks
         public void Undo()
         {
             if (undoData == null) { footer.StatusText = "元に戻せる操作はありません"; return; }
+            var keepTemplates = Data.Templates; // テンプレートは元に戻す対象にしない
             Data = DataStore.FromJson<TaskData>(undoData);
+            Data.Templates = keepTemplates;
             Data.Normalize();
             string what = undoText;
             undoData = null; undoText = null;
@@ -193,6 +199,8 @@ namespace TealSuite.Tasks
             {
                 case Keys.Control | Keys.N: AddNew(Tabs.SelectedIndex == 1 ? (DateTime?)Calendar.Day : null, false); return true;
                 case Keys.Control | Keys.L: Quick.Focus(); Quick.SelectAll(); return true;
+                case Keys.Control | Keys.Shift | Keys.N: BulkAdd(); return true;
+                case Keys.Control | Keys.D: DuplicateTask(Current()); return true;
                 case Keys.Control | Keys.D1: Tabs.SelectedIndex = 0; return true;
                 case Keys.Control | Keys.D2: Tabs.SelectedIndex = 1; return true;
                 case Keys.Control | Keys.D3: Tabs.SelectedIndex = 2; return true;
@@ -292,6 +300,124 @@ namespace TealSuite.Tasks
             for (int i = 0; i < TodayList.Items.Count; i++) if (TodayList.Items[i] == t) { TodayList.SelectedIndex = i; break; }
             for (int i = 0; i < List.Items.Count; i++) if (List.Items[i] == t) { List.SelectedIndex = i; break; }
             if (Tabs.SelectedIndex == 1 && t.HasDue) { Calendar.SelectedTask = t; Calendar.Day = t.DueDate.Value; }
+        }
+
+        // ================================================================ 1.8.0: その他 (テンプレート・まとめて追加・複製・整理)
+
+        readonly ContextMenuStrip moreMenu = new ContextMenuStrip();
+        public ContextMenuStrip MoreMenu { get { BuildMoreMenu(); return moreMenu; } }
+        /// <summary>テスト用: 確認・名前入力の代わり</summary>
+        public Func<string, bool> ConfirmHook;
+        public Func<string, string> TemplateNameHook;
+
+        bool Ask(string msg) { return ConfirmHook != null ? ConfirmHook(msg) : Dialogs.Confirm(this, msg); }
+
+        void BuildMoreMenu()
+        {
+            moreMenu.Items.Clear();
+            var cur = Current();
+            var tpls = Data.Templates ?? new List<TaskTemplate>();
+            var miUse = new ToolStripMenuItem("テンプレートから追加") { Enabled = tpls.Count > 0 };
+            foreach (var t in tpls)
+            {
+                var tpl = t;
+                miUse.DropDownItems.Add(new ToolStripMenuItem(tpl.Name + "   (" + TaskTools.TemplateSummary(tpl) + ")", null, (s, e) => AddFromTemplate(tpl)));
+            }
+            moreMenu.Items.Add(miUse);
+            moreMenu.Items.Add(new ToolStripMenuItem(cur != null ? "選んでいるタスクをテンプレートにする…" : "選んでいるタスクをテンプレートにする (タスクを選んでください)", null, (s, e) => SaveAsTemplate(Current())) { Enabled = cur != null });
+            var miDel = new ToolStripMenuItem("テンプレートを削除") { Enabled = tpls.Count > 0 };
+            foreach (var t in tpls) { var tpl = t; miDel.DropDownItems.Add(new ToolStripMenuItem(tpl.Name, null, (s, e) => DeleteTemplate(tpl))); }
+            moreMenu.Items.Add(miDel);
+            moreMenu.Items.Add(new ToolStripSeparator());
+            moreMenu.Items.Add(new ToolStripMenuItem("まとめて追加… (Ctrl+Shift+N)", null, (s, e) => BulkAdd()));
+            moreMenu.Items.Add(new ToolStripMenuItem("選んでいるタスクを複製 (Ctrl+D)", null, (s, e) => DuplicateTask(Current())) { Enabled = cur != null });
+            moreMenu.Items.Add(new ToolStripSeparator());
+            var miClean = new ToolStripMenuItem("完了したタスクを整理");
+            foreach (var d in TaskTools.CleanupDays)
+            {
+                int days = d;
+                int n = TaskTools.OldDone(Data.Tasks, Now, days).Count;
+                miClean.DropDownItems.Add(new ToolStripMenuItem((days >= 365 ? "1 年" : days + " 日") + "より前に完了したものを削除 (" + n + " 件)", null, (s, e) => CleanupDone(days)) { Enabled = n > 0 });
+            }
+            moreMenu.Items.Add(miClean);
+        }
+
+        public TaskItem AddFromTemplate(TaskTemplate tpl)
+        {
+            var t = TaskTools.Instantiate(tpl, Now);
+            Remember("「" + t.Title + "」の追加");
+            Data.Tasks.Add(t);
+            Changed("テンプレート「" + tpl.Name + "」から追加しました (" + TaskLogic.DueText(t, Now) + ")");
+            Reveal(t);
+            return t;
+        }
+
+        public bool SaveAsTemplate(TaskItem t)
+        {
+            if (t == null) { footer.StatusText = "テンプレートにするタスクを選んでください"; return false; }
+            var tpl = TaskTools.FromTask(t, t.Title, Now);
+            string name;
+            if (TemplateNameHook != null) name = TemplateNameHook(t.Title);
+            else
+                using (var f = new TemplateNameForm(t.Title, TaskTools.TemplateSummary(tpl)))
+                    name = f.ShowDialog(this) == DialogResult.OK ? f.TemplateName : null;
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            tpl.Name = name.Trim();
+            if (!TaskTools.SaveTemplate(Data, tpl)) { Dialogs.Warn(this, "テンプレートは " + TaskTools.MaxTemplates + " 個までです。使わないものを削除してください。"); return false; }
+            Save();
+            footer.StatusText = "テンプレート「" + tpl.Name + "」を保存しました (その他 ▾ → テンプレートから追加)";
+            return true;
+        }
+
+        void DeleteTemplate(TaskTemplate tpl)
+        {
+            if (!Ask("テンプレート「" + tpl.Name + "」を削除しますか? (作ったタスクはそのまま残ります)")) return;
+            if (Data.Templates != null) { Data.Templates.Remove(tpl); if (Data.Templates.Count == 0) Data.Templates = null; }
+            Save();
+            footer.StatusText = "テンプレート「" + tpl.Name + "」を削除しました";
+        }
+
+        /// <summary>まとめて追加 (1 行 1 タスク)</summary>
+        public void BulkAdd()
+        {
+            var day = Tabs.SelectedIndex == 1 ? (DateTime?)Calendar.Day : null;
+            using (var f = new BulkAddForm(Now, day))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+                AddMany(f.Result);
+            }
+        }
+
+        public int AddMany(List<TaskItem> list)
+        {
+            if (list == null || list.Count == 0) return 0;
+            Remember(list.Count + " 件の追加");
+            Data.Tasks.AddRange(list);
+            Changed(list.Count + " 件をまとめて追加しました");
+            return list.Count;
+        }
+
+        public TaskItem DuplicateTask(TaskItem t)
+        {
+            if (t == null) { footer.StatusText = "複製するタスクを選んでください"; return null; }
+            var c = TaskTools.Duplicate(t, Now);
+            Remember("「" + t.Title + "」の複製");
+            Data.Tasks.Add(c);
+            Changed("「" + t.Title + "」を複製しました");
+            Reveal(c);
+            return c;
+        }
+
+        /// <summary>days 日より前に完了したタスクを削除 (Ctrl+Z で戻せる)</summary>
+        public int CleanupDone(int days)
+        {
+            int n = TaskTools.OldDone(Data.Tasks, Now, days).Count;
+            if (n == 0) { footer.StatusText = "整理するタスクはありません"; return 0; }
+            if (!Ask((days >= 365 ? "1 年" : days + " 日") + "より前に完了したタスク " + n + " 件を削除しますか?\n(統計の「これまでの完了」からも消えます。Ctrl+Z で元に戻せます)")) return 0;
+            Remember("完了したタスクの整理");
+            n = TaskTools.CleanupDone(Data, Now, days);
+            Changed("完了したタスク " + n + " 件を整理しました");
+            return n;
         }
 
         public void InsertSamples()
@@ -406,7 +532,7 @@ namespace TealSuite.Tasks
             if (Quick.Text.Trim().Length == 0)
             {
                 quickPreview.ForeColor = Theme.SubText;
-                quickPreview.Text = "日本語で書くと、日付・時刻・かかる時間・優先度 (重要/急ぎ)・#タグ・くり返し (毎日/毎週/毎月) を読み取ります。Enter で追加。";
+                quickPreview.Text = "日本語で書くと、日付・時刻・かかる時間・優先度 (重要/急ぎ)・#タグ・くり返し (毎日/平日/毎週/毎月/毎年) を読み取ります。Enter で追加。";
                 return;
             }
             var r = ParseQuick();

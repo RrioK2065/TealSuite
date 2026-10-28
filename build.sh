@@ -76,4 +76,5 @@ done
 
 cp "$ROOT/apps.json" "$OUT/apps.json"
 cp "$ROOT/docs/README.txt" "$OUT/README.txt" 2>/dev/null || true
+cp "$ROOT/CHANGELOG.md" "$OUT/CHANGELOG.md" 2>/dev/null || true
 echo "ビルド完了: $built 個 -> $OUT"

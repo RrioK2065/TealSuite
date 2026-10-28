@@ -54,6 +54,9 @@ namespace TealSuite.Hub
             OpenPackage = (path, ver) => UpdaterLauncher.OpenDownloaded(Window, path, ver);
         }
 
+        /// <summary>設定を保存する (1.8.0: 更新内容のお知らせを見たとき)</summary>
+        public void SaveSettings() { save(); }
+
         public bool AutoCheckEnabled { get { return !Settings.UpdateCheckOff; } }
         public string Installed { get { return Window.SuiteVersion ?? AppInfo.Version; } }
 

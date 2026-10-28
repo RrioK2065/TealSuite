@@ -316,7 +316,7 @@ static class ShortcutTests
             clipCard.BtnSettings.PerformClick();
             var page = f.SettingsPage;
             Check(f.IsSettingsShown && page.AppId == "TealClip" && !passCard.Visible, "「設定」を押すと画面が Teal Clip の設定ページに切り替わる");
-            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.7.0"), "見出し: " + page.TitleText + " / " + page.SubText);
+            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.8.0"), "見出し: " + page.TitleText + " / " + page.SubText);
             Check(page.StatusText.Contains("Ctrl + Shift + V") && page.Box.Value.ToString() == "Ctrl+Shift+V", "ショートカット欄に今のキー (" + page.StatusText + ")");
             Check(page.ResidentSwitch.Checked && page.ResidentSwitch.Enabled && page.StartupSwitch.Enabled && !page.StartupSwitch.Checked, "常駐はオン、スタートアップは選べる (今はオフ)");
             Check(page.ResidentNoteText.Contains("記録を続けます"), "Teal Clip は常駐の意味を説明");

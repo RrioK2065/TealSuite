@@ -223,6 +223,103 @@ namespace TealSuite.Common
         }
     }
 
+    /// <summary>1.8.0: テキストの読み込み・CSV の読み取り・ファイル名づくり (画面なし。テストできる)</summary>
+    public static class TextKit
+    {
+        /// <summary>バイト列を文字に (BOM → UTF-8 → だめなら Shift_JIS)。改行は \n にそろえる</summary>
+        public static string Decode(byte[] b)
+        {
+            if (b == null) return "";
+            string s;
+            if (b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) s = System.Text.Encoding.UTF8.GetString(b, 3, b.Length - 3);
+            else if (b.Length >= 2 && b[0] == 0xFF && b[1] == 0xFE) s = System.Text.Encoding.Unicode.GetString(b, 2, b.Length - 2);
+            else if (b.Length >= 2 && b[0] == 0xFE && b[1] == 0xFF) s = System.Text.Encoding.BigEndianUnicode.GetString(b, 2, b.Length - 2);
+            else
+            {
+                try { s = new System.Text.UTF8Encoding(false, true).GetString(b); }
+                catch (System.Text.DecoderFallbackException)
+                {
+                    System.Text.Encoding sjis;
+                    try { sjis = System.Text.Encoding.GetEncoding(932); } catch { sjis = System.Text.Encoding.Default; }
+                    s = sjis.GetString(b);
+                }
+            }
+            return s.Replace("\r\n", "\n").Replace("\r", "\n");
+        }
+
+        /// <summary>CSV を行と列に分ける ("" で囲んだ中の , と改行もそのまま)。空の行は飛ばす</summary>
+        public static List<List<string>> ParseCsv(string text)
+        {
+            var rows = new List<List<string>>();
+            if (string.IsNullOrEmpty(text)) return rows;
+            if (text[0] == '\uFEFF') text = text.Substring(1);
+            var row = new List<string>();
+            var cell = new System.Text.StringBuilder();
+            bool quoted = false, any = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (quoted)
+                {
+                    if (c == '"') { if (i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; } else quoted = false; }
+                    else cell.Append(c);
+                    continue;
+                }
+                if (c == '"') { quoted = true; any = true; }
+                else if (c == ',') { row.Add(cell.ToString()); cell.Clear(); any = true; }
+                else if (c == '\r' || c == '\n')
+                {
+                    if (c == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
+                    row.Add(cell.ToString()); cell.Clear();
+                    if (any || row.Any(x => x.Length > 0)) rows.Add(row);
+                    row = new List<string>(); any = false;
+                }
+                else { cell.Append(c); any = true; }
+            }
+            row.Add(cell.ToString());
+            if (any || row.Any(x => x.Length > 0)) rows.Add(row);
+            return rows;
+        }
+
+        /// <summary>CSV の 1 マス ("" で囲む必要があれば囲む。Excel で式にならないよう = + - @ で始まるものは ' をつける)</summary>
+        public static string CsvCell(string v)
+        {
+            v = v ?? "";
+            if (v.Length > 0 && "=+-@".IndexOf(v[0]) >= 0) v = "'" + v;
+            if (v.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0) v = "\"" + v.Replace("\"", "\"\"") + "\"";
+            return v;
+        }
+
+        /// <summary>見出しの列番号を探す (大文字小文字を区別しない。候補のどれか)。なければ -1</summary>
+        public static int Column(List<string> header, params string[] names)
+        {
+            for (int i = 0; i < header.Count; i++)
+            {
+                var h = (header[i] ?? "").Trim().Trim('\uFEFF');
+                foreach (var n in names) if (string.Equals(h, n, StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return -1;
+        }
+        public static string Cell(List<string> row, int i) { return i >= 0 && i < row.Count ? (row[i] ?? "").Trim() : ""; }
+
+        /// <summary>ファイル名に使えない文字を除いて短くする。used にある名前とかぶったら (2)(3)… をつける</summary>
+        public static string SafeFileName(string title, string ext, ICollection<string> used)
+        {
+            var bad = new HashSet<char>(Path.GetInvalidFileNameChars().Concat(new[] { '\\', '/', ':', '*', '?', '"', '<', '>', '|' }));
+            var sb = new System.Text.StringBuilder();
+            foreach (var ch in (title ?? "").Trim()) sb.Append(bad.Contains(ch) || char.IsControl(ch) ? '_' : ch);
+            var name = sb.ToString().Trim().TrimEnd('.', ' ');
+            if (name.Length > 40) name = name.Substring(0, 40).TrimEnd('.', ' ');
+            if (name.Length == 0) name = "無題";
+            var reserved = new[] { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2", "LPT3" };
+            if (reserved.Contains(name.ToUpperInvariant())) name = "_" + name;
+            string cand = name + ext;
+            for (int k = 2; used != null && used.Any(u => string.Equals(u, cand, StringComparison.OrdinalIgnoreCase)); k++) cand = name + " (" + k + ")" + ext;
+            if (used != null) used.Add(cand);
+            return cand;
+        }
+    }
+
     /// <summary>幅に合わせて折り返し、高さを自分で決めるラベル (Dock=Top 用。文字が切れない)</summary>
     public class WrapLabel : Label
     {

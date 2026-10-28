@@ -134,6 +134,8 @@ namespace TealSuite.Sub
                 : "解約済み (支払いはありません)";
             text += "  ・  月あたり " + Fmt.Yen(SubLogic.MonthlyCost(s)) + "  ・  年 " + Fmt.Yen(SubLogic.YearlyCost(s));
             if (SubLogic.InTrial(s, today)) text += "\n無料期間中です (" + Fmt.MonthDay(s.TrialEndDate.Value) + " から有料)";
+            if (s.Amount != Sub.Amount && Sub.Amount > 0) text += "\n保存すると料金の変更 (" + Fmt.Yen(Sub.Amount) + " → " + Fmt.Yen(s.Amount) + ") を記録します";
+            else { var last = SubPlan.Latest(Sub); if (last != null && last.DateValue.HasValue) text += "\n前回の料金変更: " + Fmt.Date(last.DateValue.Value) + "  " + Fmt.Yen(last.From) + " → " + Fmt.Yen(last.To); }
             preview.Text = text;
         }
 
@@ -218,7 +220,8 @@ namespace TealSuite.Sub
     {
         public readonly ToggleSwitch swRemind = new ToggleSwitch("更新日・無料期間の終わりをお知らせする");
         public readonly NumericUpDown numDays = new NumericUpDown();
-        public SubSettingsForm(SubSettings st, bool resident, Action exportCsv, Action backup, Action restore)
+        public readonly NumericUpDown numBudget = new NumericUpDown();
+        public SubSettingsForm(SubSettings st, bool resident, Action exportCsv, Action backup, Action restore, Action importCsv = null)
         {
             DialogKit.Setup(this, AppInfo.TitleFor("設定"));
             var grid = new FormGrid(1, 460);
@@ -239,21 +242,33 @@ namespace TealSuite.Sub
             hub.Click += (s, e) => HubLink.OpenSettings(this, AppInfo.Id);
             grid.AddRaw(FormGrid.Inline(hub), 1);
 
+            grid.Add(null, new WrapLabel { Text = "月の予算", Font = Theme.Title });
+            numBudget.Minimum = 0; numBudget.Maximum = 10000000; numBudget.Increment = 500; numBudget.ThousandsSeparator = true;
+            numBudget.Width = Theme.S(120); numBudget.Font = Theme.Body; numBudget.TextAlign = HorizontalAlignment.Right;
+            var yen = new Label { Text = "円 / 月 (0 = 使わない)", AutoSize = true, UseMnemonic = false, Padding = new Padding(0, Theme.S(4), 0, 0) };
+            grid.Add("サブスクに使ってよい金額 (月あたり)", FormGrid.Inline(numBudget, yen));
+            grid.Add(null, new WrapLabel { Text = "ダッシュボードと支払い予定に、予算まであといくらか (超えていないか) を出します。", Font = Theme.Small, ForeColor = Theme.SubText });
+
             grid.Add(null, new WrapLabel { Text = "データ", Font = Theme.Title });
+            var csvIn = new FlatButton("CSV から読み込む…", ButtonKind.Secondary).FitWidth(100);
+            csvIn.Visible = importCsv != null;
+            csvIn.Click += (s, e) => importCsv();
             var csv = new FlatButton("CSV に書き出す…", ButtonKind.Secondary).FitWidth(100);
             var bak = new FlatButton("バックアップ (JSON)…", ButtonKind.Secondary).FitWidth(100);
             var res = new FlatButton("バックアップから戻す…", ButtonKind.Secondary).FitWidth(100);
             csv.Click += (s, e) => exportCsv(); bak.Click += (s, e) => backup(); res.Click += (s, e) => restore();
-            grid.AddRaw(FormGrid.Inline(csv, bak, res), 1);
+            grid.AddRaw(FormGrid.Inline(csv, csvIn), 1);
+            grid.AddRaw(FormGrid.Inline(bak, res), 1);
             grid.Add(null, new WrapLabel { Text = "データはこのパソコンの中 (" + DataStore.AppDir + ") だけに保存されます。インターネットには送りません。", Font = Theme.Small, ForeColor = Theme.SubText });
 
             var ok = new FlatButton("OK", ButtonKind.Primary).FitWidth(88);
             var cancel = new FlatButton("キャンセル", ButtonKind.Secondary).FitWidth(88);
-            ok.Click += (s, e) => { st.Remind = swRemind.Checked; st.RemindDays = (int)numDays.Value; DialogResult = DialogResult.OK; };
+            ok.Click += (s, e) => { st.Remind = swRemind.Checked; st.RemindDays = (int)numDays.Value; st.MonthlyBudget = (long)numBudget.Value; DialogResult = DialogResult.OK; };
             cancel.DialogResult = DialogResult.Cancel; CancelButton = cancel;
             grid.AddRaw(DialogKit.Buttons(ok, cancel), 1);
             Controls.Add(grid);
             swRemind.Checked = st.Remind; numDays.Value = Math.Max(0, Math.Min(30, st.RemindDays));
+            numBudget.Value = Math.Max(0, Math.Min(numBudget.Maximum, st.MonthlyBudget));
             swRemind.CheckedChanged += (s, e) => numDays.Enabled = swRemind.Checked;
             numDays.Enabled = st.Remind;
         }

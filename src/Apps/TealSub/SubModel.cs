@@ -38,6 +38,8 @@ namespace TealSuite.Sub
         [DataMember(Name = "trialEnd", Order = 14, EmitDefaultValue = false)] public string TrialEnd;
         [DataMember(Name = "cancelledOn", Order = 15, EmitDefaultValue = false)] public string CancelledOn;
         [DataMember(Name = "created", Order = 16, EmitDefaultValue = false)] public string Created;
+        /// <summary>1.8.0: 料金の変更履歴 (古い順)</summary>
+        [DataMember(Name = "priceHistory", Order = 17, EmitDefaultValue = false)] public List<PriceChange> PriceHistory;
 
         [IgnoreDataMember]
         public Cycle Cycle
@@ -80,7 +82,9 @@ namespace TealSuite.Sub
         [DataMember(Name = "remind", Order = 1)] public bool Remind = true;
         /// <summary>更新日・無料期間の終わりの何日前にお知らせするか</summary>
         [DataMember(Name = "remindDays", Order = 2)] public int RemindDays = 3;
-        [OnDeserializing] void Defaults(StreamingContext c) { Remind = true; RemindDays = 3; }
+        /// <summary>1.8.0: 1 か月の予算 (円)。0 = 使わない</summary>
+        [DataMember(Name = "budget", Order = 3, EmitDefaultValue = false)] public long MonthlyBudget;
+        [OnDeserializing] void Defaults(StreamingContext c) { Remind = true; RemindDays = 3; MonthlyBudget = 0; }
     }
 
     [DataContract]
@@ -100,6 +104,7 @@ namespace TealSuite.Sub
             if (Settings == null) Settings = new SubSettings();
             if (Notified == null) Notified = new List<string>();
             Settings.RemindDays = Math.Max(0, Math.Min(30, Settings.RemindDays));
+            Settings.MonthlyBudget = Math.Max(0, Math.Min(10000000, Settings.MonthlyBudget));
             foreach (var s in Subs)
             {
                 if (string.IsNullOrEmpty(s.Id)) s.Id = Guid.NewGuid().ToString("N");
@@ -108,6 +113,7 @@ namespace TealSuite.Sub
                 if (s.Amount < 0) s.Amount = 0;
                 if (s.Cycle == Cycle.EveryNMonths && s.CycleMonths < 1) s.CycleMonths = 1;
                 if (!s.StartDate.HasValue) s.StartDate = DateTime.Today;
+                if (s.PriceHistory != null) { s.PriceHistory.RemoveAll(p => p == null); if (s.PriceHistory.Count == 0) s.PriceHistory = null; }
             }
         }
     }

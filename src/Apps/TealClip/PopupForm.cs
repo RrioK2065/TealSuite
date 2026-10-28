@@ -43,7 +43,7 @@ namespace TealSuite.Clip
             }
         }
 
-        int Count { get { return ctx.History.Items.Count; } }
+        int Count { get { return Math.Min(History.PopupRows, ctx.History.Items.Count); } }
 
         public void ShowAt(Point cursor, IntPtr previous)
         {
@@ -74,12 +74,12 @@ namespace TealSuite.Clip
 
             // 見出し
             TextRenderer.DrawText(g, AppInfo.DisplayName, Theme.Bold, new Rectangle(Theme.S(14), 0, Width / 2, headH), Theme.Text, tf);
-            TextRenderer.DrawText(g, ctx.Hotkey.IsEmpty ? "" : ctx.Hotkey.Display, Theme.Small, new Rectangle(Width / 2, 0, Width / 2 - Theme.S(14), headH), Theme.SubText, tf | TextFormatFlags.Right);
+            TextRenderer.DrawText(g, ctx.Paused ? "記録を一時停止中" : ctx.Hotkey.IsEmpty ? "" : ctx.Hotkey.Display, Theme.Small, new Rectangle(Width / 2, 0, Width / 2 - Theme.S(14), headH), Theme.SubText, tf | TextFormatFlags.Right);
 
             var items = ctx.History.Items;
             if (items.Count == 0)
                 TextRenderer.DrawText(g, "まだ履歴がありません。文字をコピーするとここに並びます。", Theme.Body, RowRect(0), Theme.SubText, tf | TextFormatFlags.HorizontalCenter);
-            for (int i = 0; i < items.Count; i++)
+            for (int i = 0; i < Count; i++)
             {
                 var r = RowRect(i);
                 bool sel = i == selected, hov = i == hover;

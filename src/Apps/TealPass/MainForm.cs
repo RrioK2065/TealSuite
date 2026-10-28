@@ -32,6 +32,10 @@ namespace TealSuite.Pass
         readonly TextBox search = new TextBox();
         readonly ListBox list = new ListBox();
         readonly CardPanel listCard = new CardPanel("保存したパスワード");
+        /// <summary>1.8.0: 一覧の絞り込み (すべて / お気に入り / 要注意)</summary>
+        public readonly ComboBox FilterBox = Lay.Combo("すべて", "★ お気に入り", "要注意");
+        readonly ContextMenuStrip moreMenu = new ContextMenuStrip();
+        HealthReport health = new HealthReport();
         // 詳細
         readonly Panel detail = new Panel();
         readonly Label emptyDetail = new Label();
@@ -41,6 +45,14 @@ namespace TealSuite.Pass
         readonly FlatButton btnReveal = new FlatButton("表示", ButtonKind.Secondary);
         readonly Label dUpdated = new Label();
         readonly StrengthBar dStrength = new StrengthBar();
+        readonly Label dIssue = new Label();
+        readonly FlatButton btnFav = new FlatButton("☆ お気に入り", ButtonKind.Secondary);
+        readonly FlatButton btnHistory = new FlatButton("以前のパスワード", ButtonKind.Secondary);
+
+        public HealthReport Health { get { return health; } }
+        public ListBox List { get { return list; } }
+        public ContextMenuStrip MoreMenu { get { return moreMenu; } }
+        public string IssueText { get { return dIssue.Visible ? dIssue.Text : ""; } }
 
         public VaultFile Vault { get { return vault; } }
 
@@ -59,6 +71,12 @@ namespace TealSuite.Pass
             var btnAdd = header.AddAction(new FlatButton("＋ 追加", ButtonKind.Primary)).FitWidth(96);
             btnAdd.Click += (s, e) => AddEntry(null);
             new ToolTip().SetToolTip(btnAdd, "パスワードを登録 (Ctrl+N)");
+            var btnCheck = header.AddAction(new FlatButton("安全チェック", ButtonKind.Secondary)).FitWidth(110);
+            btnCheck.Click += (s, e) => ShowHealth();
+            new ToolTip().SetToolTip(btnCheck, "使い回し・弱い・1 年以上変えていないパスワードを調べます");
+            var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Secondary)).FitWidth(90);
+            moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
+            btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
 
             var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = Theme.P(Theme.Pad), BackColor = Theme.Background };
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(340)));
@@ -172,6 +190,10 @@ namespace TealSuite.Pass
             listCard.Controls.Add(list);
             listCard.Controls.Add(Ui.Spacer(8));
             listCard.Controls.Add(new InputFrame(search) { Dock = DockStyle.Top });
+            listCard.Controls.Add(Ui.Spacer(6));
+            FilterBox.Dock = DockStyle.Top;
+            FilterBox.SelectedIndexChanged += (s, e) => RefreshList(null);
+            listCard.Controls.Add(FilterBox);
             return listCard;
         }
 
@@ -198,6 +220,19 @@ namespace TealSuite.Pass
             int tx = x + d + Theme.S(10), tw = e.Bounds.Right - tx - Theme.S(6);
             int top = e.Bounds.Y + (e.Bounds.Height - Theme.Title.Height - Theme.Small.Height - Theme.S(2)) / 2;
             var f = TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+            var iss = health.Of(en);
+            if (iss != PassIssue.None)
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                int left = Draw.Chip(g, "要注意", Theme.Blend(Theme.Warning, Color.Black, 0.25f), Theme.Blend(Theme.Warning, Color.White, 0.85f), e.Bounds.Right - Theme.S(8), top + Theme.Title.Height / 2, true);
+                tw = left - Theme.S(6) - tx;
+            }
+            if (en.Favorite)
+            {
+                int sw = TextRenderer.MeasureText(g, "★", Theme.Title, Size.Empty, TextFormatFlags.NoPadding).Width + Theme.S(3);
+                TextRenderer.DrawText(g, "★", Theme.Title, new Rectangle(tx, top, sw, Theme.Title.Height), Theme.Accent, f);
+                tx += sw; tw -= sw;
+            }
             TextRenderer.DrawText(g, en.Site, Theme.Title, new Rectangle(tx, top, tw, Theme.Title.Height), Theme.Text, f);
             TextRenderer.DrawText(g, string.IsNullOrEmpty(en.UserId) ? "(ID なし)" : en.UserId, Theme.Small, new Rectangle(tx, top + Theme.Title.Height + Theme.S(2), tw, Theme.Small.Height + 2), Theme.SubText, f);
         }
@@ -206,7 +241,12 @@ namespace TealSuite.Pass
         {
             var cur = select ?? list.SelectedItem as VaultEntry;
             var q = search.Text.Trim();
-            var items = vault.Entries.Where(x => x.Matches(q)).OrderBy(x => x.Site, StringComparer.CurrentCultureIgnoreCase).ToArray();
+            health = PassTools.Check(vault.Entries, DateTime.Now);
+            int fi = FilterBox.SelectedIndex;
+            var items = vault.Entries.Where(x => x.Matches(q))
+                .Where(x => fi == 1 ? x.Favorite : fi == 2 ? health.Of(x) != PassIssue.None : true)
+                .OrderBy(x => x.Favorite ? 0 : 1).ThenBy(x => x.Site, StringComparer.CurrentCultureIgnoreCase).ToArray();
+            UpdateFilterLabels();
             list.BeginUpdate();
             list.Items.Clear();
             list.Items.AddRange(items);
@@ -214,7 +254,7 @@ namespace TealSuite.Pass
             if (cur != null && items.Contains(cur)) list.SelectedItem = cur;
             else if (items.Length > 0) list.SelectedIndex = 0;
             else ShowDetail(null);
-            listCard.Title = q.Length > 0 ? string.Format("保存したパスワード  {0} / {1}", items.Length, vault.Entries.Count) : string.Format("保存したパスワード  {0} 件", vault.Entries.Count);
+            listCard.Title = q.Length > 0 || fi > 0 ? string.Format("保存したパスワード  {0} / {1}", items.Length, vault.Entries.Count) : string.Format("保存したパスワード  {0} 件", vault.Entries.Count);
             listCard.Invalidate();
         }
 
@@ -249,6 +289,17 @@ namespace TealSuite.Pass
             var bottom = new Panel { Dock = DockStyle.Bottom, Height = Theme.S(Theme.ButtonHeight + 12), Padding = Theme.P(0, 12, 0, 0), BackColor = Theme.Surface };
             var bEdit = new FlatButton("編集", ButtonKind.Secondary).FitWidth(80);
             var bDel = new FlatButton("削除", ButtonKind.Danger).FitWidth(80);
+            btnFav.FitWidth(120); btnHistory.FitWidth(150);
+            btnFav.Click += (s, e) => ToggleFavorite();
+            btnHistory.Click += (s, e) => ShowHistory();
+            dIssue.Font = Theme.Small; dIssue.ForeColor = Theme.Warning; dIssue.AutoSize = false; dIssue.Height = Theme.Small.Height + Theme.S(6);
+            dIssue.TextAlign = ContentAlignment.MiddleLeft; dIssue.UseMnemonic = false; dIssue.AutoEllipsis = true;
+            var bottom2 = new Panel { Dock = DockStyle.Bottom, Height = Theme.S(Theme.ButtonHeight + 12), Padding = Theme.P(0, 12, 0, 0), BackColor = Theme.Surface };
+            btnFav.Dock = DockStyle.Left; btnHistory.Dock = DockStyle.Left;
+            bottom2.Controls.Add(btnHistory);
+            bottom2.Controls.Add(new Panel { Dock = DockStyle.Left, Width = Theme.S(8) });
+            bottom2.Controls.Add(btnFav);
+            btnFav.BringToFront();
             bEdit.Click += (s, e) => EditSelected();
             bDel.Click += (s, e) => DeleteSelected();
             dUpdated.Dock = DockStyle.Fill; dUpdated.Font = Theme.Small; dUpdated.ForeColor = Theme.SubText; dUpdated.TextAlign = ContentAlignment.MiddleLeft;
@@ -259,11 +310,12 @@ namespace TealSuite.Pass
             bDel.Dock = DockStyle.Right; bottom.Controls.Add(bDel);
 
             detail.Controls.Add(memoFrame);
+            detail.Controls.Add(bottom2);
             detail.Controls.Add(bottom);
             Ly.Stack(detail, dSite, dUrl, Ui.Spacer(6),
                 Ly.SectionLabel("ユーザー名 / ID"), Ly.FieldRow(new InputFrame(dUser), bCopyUser),
                 Ly.SectionLabel("パスワード"), Ly.FieldRow(new InputFrame(dPass), btnReveal, bCopyPass),
-                Ui.Spacer(6), dStrength,
+                Ui.Spacer(6), dStrength, dIssue,
                 Ly.SectionLabel("メモ"));
             card.Controls.Add(detail);
             card.Controls.Add(emptyDetail);
@@ -286,6 +338,18 @@ namespace TealSuite.Pass
             dStrength.SetPassword(en.Password);
             dMemo.Text = (en.Memo ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n");
             dUpdated.Text = "更新: " + en.Updated.ToString("yyyy/MM/dd HH:mm") + "   作成: " + en.Created.ToString("yyyy/MM/dd");
+            btnFav.Text = en.Favorite ? "★ お気に入り" : "☆ お気に入り";
+            btnHistory.Text = "以前のパスワード (" + en.HistoryCount + ")";
+            btnHistory.Enabled = en.HistoryCount > 0;
+            var iss = health.Of(en);
+            dIssue.Visible = iss != PassIssue.None;
+            if (iss != PassIssue.None)
+            {
+                var txt = "⚠ " + PassTools.IssueText(iss);
+                var same = PassTools.SamePassword(vault.Entries, en);
+                if (same.Count > 0) txt += " (" + string.Join("、", same.Take(3).Select(x => x.Site)) + (same.Count > 3 ? " ほか" : "") + ")";
+                dIssue.Text = txt;
+            }
         }
 
         void SetReveal(bool show)
@@ -327,6 +391,7 @@ namespace TealSuite.Pass
                 if (f.ShowDialog(this) != DialogResult.OK) return;
             }
             en.Created = en.Updated = DateTime.Now;
+            en.PasswordChanged = en.Created;
             vault.Entries.Add(en);
             if (Persist()) { search.Text = ""; RefreshList(en); lastAction = "「" + en.Site + "」を追加しました"; UpdateFooter(); }
         }
@@ -340,6 +405,7 @@ namespace TealSuite.Pass
             {
                 if (f.ShowDialog(this) != DialogResult.OK) return;
             }
+            PassTools.ApplyEdit(en, copy, DateTime.Now);
             var idx = vault.Entries.IndexOf(en);
             vault.Entries[idx] = copy;
             if (Persist()) { RefreshList(copy); lastAction = "「" + copy.Site + "」を更新しました"; UpdateFooter(); }
@@ -409,6 +475,115 @@ namespace TealSuite.Pass
             try { clip.Copy(text, false); lastAction = what + "をコピーしました"; }
             catch (Exception ex) { lastAction = "コピーできませんでした: " + ex.Message; }
             UpdateFooter();
+        }
+
+        // ================= 1.8.0 =================
+        void UpdateFilterLabels()
+        {
+            var labels = new[] { "すべて (" + vault.Entries.Count + ")", "★ お気に入り (" + vault.Entries.Count(x => x.Favorite) + ")", "要注意 (" + health.Total + ")" };
+            bool same = true;
+            for (int i = 0; i < 3; i++) if ((string)FilterBox.Items[i] != labels[i]) same = false;
+            if (same) return;
+            for (int i = 0; i < 3; i++) FilterBox.Items[i] = labels[i];
+        }
+
+        public void ToggleFavorite()
+        {
+            var en = Selected;
+            if (en == null) return;
+            en.Favorite = !en.Favorite;
+            if (!Persist()) { en.Favorite = !en.Favorite; return; }
+            RefreshList(en);
+            lastAction = en.Favorite ? "「" + en.Site + "」をお気に入りにしました" : "「" + en.Site + "」をお気に入りから外しました";
+            UpdateFooter();
+        }
+
+        public void SelectEntry(VaultEntry en)
+        {
+            if (en == null) return;
+            if (!list.Items.Contains(en)) { search.Text = ""; FilterBox.SelectedIndex = 0; }
+            if (list.Items.Contains(en)) list.SelectedItem = en;
+        }
+
+        void BuildMoreMenu()
+        {
+            moreMenu.Items.Clear();
+            moreMenu.Items.Add(new ToolStripMenuItem("ブラウザーの CSV から読み込む…", null, (s, e) => ImportCsv()) { Enabled = vaultReady });
+            moreMenu.Items.Add(new ToolStripMenuItem("CSV に書き出す…", null, (s, e) => ExportCsv()) { Enabled = vaultReady && vault.Entries.Count > 0 });
+            moreMenu.Items.Add(new ToolStripSeparator());
+            moreMenu.Items.Add(new ToolStripMenuItem("安全チェック…", null, (s, e) => ShowHealth()));
+            moreMenu.Items.Add(new ToolStripMenuItem("データ フォルダーを開く", null, (s, e) => AppHost.OpenFolder(DataStore.AppDir)));
+        }
+
+        /// <summary>CSV の文字列を取り込む (テストからも呼ぶ)。追加した件数</summary>
+        public ImportResult ImportCsvText(string text)
+        {
+            var r = PassTools.ImportCsv(text, vault.Entries, DateTime.Now);
+            if (r.Error != null || r.Added.Count == 0) return r;
+            vault.Entries.AddRange(r.Added);
+            if (!Persist()) { foreach (var a in r.Added) vault.Entries.Remove(a); r.Error = "保存できませんでした。"; r.Added.Clear(); return r; }
+            search.Text = ""; FilterBox.SelectedIndex = 0;
+            RefreshList(r.Added[0]);
+            lastAction = r.Added.Count + " 件を読み込みました";
+            UpdateFooter();
+            return r;
+        }
+
+        void ImportCsv()
+        {
+            if (!vaultReady) return;
+            Dialogs.Info(this, "Chrome・Edge・Firefox などで書き出したパスワードの CSV を読み込みます。\n\n" +
+                "・Chrome / Edge: 設定 → パスワード マネージャー → 設定 → パスワードをエクスポート\n" +
+                "・Firefox: パスワード → … → ファイルにエクスポート\n\n" +
+                "同じサイト・ID・パスワードのものはとばします。\n読み込んだあとは、CSV ファイルを必ず削除してください (暗号化されていません)。");
+            using (var d = new OpenFileDialog { Filter = "CSV ファイル (*.csv)|*.csv|すべてのファイル (*.*)|*.*" })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                string text;
+                try
+                {
+                    var fi = new System.IO.FileInfo(d.FileName);
+                    if (fi.Length > 20 * 1024 * 1024) { Dialogs.Warn(this, "ファイルが大きすぎます (20 MB まで)。"); return; }
+                    text = TextKit.Decode(System.IO.File.ReadAllBytes(d.FileName));
+                }
+                catch (Exception ex) { Dialogs.Error(this, "読み込めませんでした。\n" + ex.Message); return; }
+                var r = ImportCsvText(text);
+                if (r.Error != null) { Dialogs.Error(this, r.Error); return; }
+                var msg = r.Added.Count + " 件を追加しました。";
+                if (r.Duplicates > 0) msg += "\n登録済みのため " + r.Duplicates + " 件をとばしました。";
+                if (r.Skipped > 0) msg += "\nサイト名やパスワードがない " + r.Skipped + " 行をとばしました。";
+                msg += "\n\n元の CSV ファイルは削除しておくと安全です。";
+                Dialogs.Info(this, msg);
+            }
+        }
+
+        void ExportCsv()
+        {
+            if (!vaultReady || vault.Entries.Count == 0) return;
+            if (!Dialogs.Confirm(this, "すべてのパスワードを、暗号化されていない CSV ファイルに書き出します。\n" +
+                "ファイルを開ける人は誰でもパスワードを読めます。\n\n" +
+                "ほかのパスワード管理やブラウザーへ移すときだけ使い、終わったら必ず削除してください。\n書き出しますか?", "CSV に書き出す")) return;
+            var path = FileKit.SaveText(this, PassTools.ToCsv(vault.Entries), "TealPass-" + DateTime.Now.ToString("yyyyMMdd") + ".csv", "CSV ファイル (*.csv)|*.csv");
+            if (path != null) { lastAction = vault.Entries.Count + " 件を CSV に書き出しました"; UpdateFooter(); }
+        }
+
+        void ShowHealth()
+        {
+            if (!vaultReady) return;
+            health = PassTools.Check(vault.Entries, DateTime.Now);
+            using (var f = new HealthForm(health, vault.Entries))
+            {
+                f.ShowDialog(this);
+                if (f.Chosen != null) { FilterBox.SelectedIndex = 0; search.Text = ""; RefreshList(f.Chosen); SelectEntry(f.Chosen); }
+            }
+        }
+
+        void ShowHistory()
+        {
+            var en = Selected;
+            if (en == null || en.HistoryCount == 0) return;
+            using (var f = new HistoryForm(en, (pw) => CopySecret(pw, "以前のパスワード")))
+                f.ShowDialog(this);
         }
 
         void UpdateFooter()

@@ -7,8 +7,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Tasks - タスク管理＆カレンダー")]
 [assembly: AssemblyDescription("やることを期限・優先度で並べ、カレンダーで予定を動かせるアプリ")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.7.0.0")]
-[assembly: AssemblyFileVersion("1.7.0.0")]
+[assembly: AssemblyVersion("1.8.0.0")]
+[assembly: AssemblyFileVersion("1.8.0.0")]
 
 namespace TealSuite.Tasks
 {

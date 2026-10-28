@@ -1,1 +1,2 @@
-# 追加の参照なし
+# 1.8.0: データのバックアップ (zip) に System.IO.Compression を使う
+System.IO.Compression.dll

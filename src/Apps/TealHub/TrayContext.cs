@@ -4,6 +4,7 @@
 //  - --startup (ログイン時の自動起動) では画面を出さずに常駐する。もう一度起動すると画面を出す
 //  - --settings <アプリ ID> で起動されたら、そのアプリの設定ページを開く (各アプリの「設定…」メニューから)
 using System;
+using System.Linq;
 using System.Drawing;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
@@ -21,6 +22,8 @@ namespace TealSuite.Hub
         [DataMember(Name = "lastUpdateCheck", Order = 3, EmitDefaultValue = false)] public string LastUpdateCheck;
         /// <summary>通知領域でお知らせしたバージョン (同じバージョンは 1 回だけ)</summary>
         [DataMember(Name = "notifiedVersion", Order = 4, EmitDefaultValue = false)] public string NotifiedVersion;
+        /// <summary>1.8.0: 「更新内容」のお知らせを見た (閉じた) バージョン</summary>
+        [DataMember(Name = "lastSeenVersion", Order = 5, EmitDefaultValue = false)] public string LastSeenVersion;
     }
 
     public class HubTray : ApplicationContext
@@ -56,6 +59,21 @@ namespace TealSuite.Hub
 
             var menu = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
             menu.Items.Add(new ToolStripMenuItem("開く", null, (s, e) => ShowWindow()) { Font = Theme.Bold });
+            var miApps = new ToolStripMenuItem("アプリを開く");
+            menu.Items.Add(miApps);
+            menu.Opening += (s, e) =>
+            {
+                miApps.DropDownItems.Clear();
+                foreach (var a in Window.Apps.ToList())
+                {
+                    var id = a.Id;
+                    var card = Window.CardFor(id);
+                    bool running = card != null && card.Pids.Count > 0;
+                    miApps.DropDownItems.Add(new ToolStripMenuItem(a.Name + (running ? "  (実行中)" : ""), null, (s2, e2) => Window.OpenApp(id)));
+                }
+                if (miApps.DropDownItems.Count == 0) miApps.DropDownItems.Add(new ToolStripMenuItem("(アプリがありません)") { Enabled = false });
+            };
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Teal Hub の設定…", null, (s, e) => OpenSettings(null)));
             menu.Items.Add(new ToolStripMenuItem("更新を確認", null, (s, e) => { ShowWindow(); Updates.CheckNow(); }));
             menu.Items.Add(new ToolStripMenuItem("アップデート ファイルを開く…", null, (s, e) => { ShowWindow(); Window.BeginInvoke((Action)(() => Window.OpenUpdateFileDialog())); }));

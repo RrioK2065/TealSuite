@@ -344,6 +344,11 @@ namespace TealSuite.Hub
             header = HeaderBar.ForApp("TealSuite " + AppInfo.Version);
             btnStopAll = header.AddAction(new FlatButton("すべて終了", ButtonKind.Danger)).FitWidth(88);
             btnUpdate = header.AddAction(new FlatButton(UpdateButtonText, ButtonKind.Secondary)).FitWidth(112);
+            var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Ghost)).FitWidth(72);
+            moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
+            BuildMoreMenu();
+            btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
+            tips.SetToolTip(btnMore, "更新内容・データのバックアップと復元・データ フォルダー");
             // ヘッダーの下: Teal Hub 自身の設定の要約・設定ボタン・再読み込み
             selfBar = new SelfBar();
             selfBar.BtnSettings.Click += (s, e) => ShowSettings(null);
@@ -660,6 +665,9 @@ namespace TealSuite.Hub
                     : "新しいバージョン TealSuite " + rel.Version + " があります (今は " + updates.Installed + ")" + (rel.Summary.Length > 0 ? "\n" + rel.Summary : "");
                 list.Add(Tuple.Create("update|" + rel.Version + "|" + (updates.Downloading ? "dl" + updates.DownloadPercent : ""), msg, "今すぐアップデート", (Action)(() => updates.StartUpdate())));
             }
+            var seenVer = suiteVersion ?? AppInfo.Version;
+            if (updates != null && updates.Settings.LastSeenVersion != seenVer && rel == null)
+                list.Add(Tuple.Create("whatsnew|" + seenVer, "TealSuite " + seenVer + " になりました。新しくできるようになったことを確認できます。", "更新内容を見る", (Action)(() => ShowWhatsNew())));
             if (selfState.Status == StartupStatus.PathMismatch)
                 list.Add(Tuple.Create("self", "Teal Hub のスタートアップの登録先が違います。\n登録先: " + selfState.RegisteredPath, "この場所で登録し直す", (Action)(() => SetSelfStartup(true))));
             else if (!selfState.Registered && AnyAppStartupOn && !dismissed.Contains("selfoff"))
@@ -684,8 +692,9 @@ namespace TealSuite.Hub
             foreach (var t in list)
             {
                 var item = t;
-                bool isUpdate = item.Item1.StartsWith("update|");
-                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || item.Item1 == "selfoff" || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate);
+                bool isUpdate = item.Item1.StartsWith("update|"), isNew = item.Item1.StartsWith("whatsnew|");
+                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || item.Item1 == "selfoff" || isNew || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate || isNew);
+                if (isNew && bar.Dismiss != null) { bar.Dismiss.Text = "閉じる"; bar.Dismiss.Click += (s, e) => MarkWhatsNewSeen(); }
                 if (isUpdate)
                 {
                     var r = updates.Available;
@@ -697,7 +706,7 @@ namespace TealSuite.Hub
                 if (item.Item1.StartsWith("legacy"))
                     tips.SetToolTip(bar, string.Join("\n", legacy.Where(x => item.Item1.StartsWith("legacy|" + x.AppId + "|")).Select(x => x.Describe())));
                 bar.Action.Click += (s, e) => item.Item4();
-                if (bar.Dismiss != null && !isUpdate) bar.Dismiss.Click += (s, e) => { dismissed.Add(item.Item1); noticesKey = null; UpdateNotices(); };
+                if (bar.Dismiss != null && !isUpdate && !isNew) bar.Dismiss.Click += (s, e) => { dismissed.Add(item.Item1); noticesKey = null; UpdateNotices(); };
                 bar.Margin = new Padding(0, 0, 0, Theme.S(8));
                 notices.Controls.Add(bar);
             }
@@ -839,6 +848,135 @@ namespace TealSuite.Hub
         }
 
         public void OpenUpdateFileDialog() { ChooseUpdateFile(); }
+
+        // ---------- 1.8.0: その他 (更新内容・バックアップ・復元) ----------
+        readonly ContextMenuStrip moreMenu = new ContextMenuStrip();
+        public ContextMenuStrip MoreMenu { get { return moreMenu; } }
+        /// <summary>テスト用: 保存先・開くファイルを選ぶ画面の代わり</summary>
+        public Func<string, string> PickBackupSave, PickBackupOpen;
+        /// <summary>テスト用: 確認ダイアログの代わり (null なら Dialogs.Confirm)</summary>
+        public Func<string, bool> ConfirmHook;
+        /// <summary>テスト用: 更新内容の画面の代わり</summary>
+        public Action<List<KeyValuePair<string, string>>> ShowWhatsNewHook;
+
+        void BuildMoreMenu()
+        {
+            moreMenu.Items.Clear();
+            moreMenu.Items.Add(new ToolStripMenuItem("更新内容を見る…", null, (s, e) => ShowWhatsNew()) { Font = Theme.Bold });
+            moreMenu.Items.Add(new ToolStripSeparator());
+            moreMenu.Items.Add(new ToolStripMenuItem("すべてのアプリのデータをバックアップ…", null, (s, e) => BackupData()));
+            moreMenu.Items.Add(new ToolStripMenuItem("バックアップから復元…", null, (s, e) => RestoreData()));
+            moreMenu.Items.Add(new ToolStripSeparator());
+            moreMenu.Items.Add(new ToolStripMenuItem("データ フォルダーを開く", null, (s, e) => AppHost.OpenFolder(DataStore.Root)));
+        }
+
+        bool Ask(string msg, string title)
+        {
+            if (ConfirmHook != null) return ConfirmHook(msg);
+            return Dialogs.Confirm(this, msg, title);
+        }
+
+        public void ShowWhatsNew()
+        {
+            var all = ChangeLog.Load();
+            MarkWhatsNewSeen();
+            if (ShowWhatsNewHook != null) { ShowWhatsNewHook(all); return; }
+            using (var f = new WhatsNewForm(all, suiteVersion ?? AppInfo.Version)) f.ShowDialog(this);
+        }
+
+        void MarkWhatsNewSeen()
+        {
+            if (updates == null) return;
+            var v = suiteVersion ?? AppInfo.Version;
+            if (updates.Settings.LastSeenVersion == v) return;
+            updates.Settings.LastSeenVersion = v;
+            updates.SaveSettings();
+            noticesKey = null; UpdateNotices();
+        }
+
+        /// <summary>すべてのアプリのデータを zip にまとめる。保存したパス (やめたら null)</summary>
+        public string BackupData()
+        {
+            string path;
+            if (PickBackupSave != null) path = PickBackupSave(HubBackup.DefaultName(DateTime.Now));
+            else
+                using (var dlg = new SaveFileDialog { Title = "データのバックアップを保存", FileName = HubBackup.DefaultName(DateTime.Now), Filter = "zip ファイル (*.zip)|*.zip", DefaultExt = "zip", AddExtension = true })
+                {
+                    try { dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); } catch { }
+                    path = dlg.ShowDialog(this) == DialogResult.OK ? dlg.FileName : null;
+                }
+            if (path == null) return null;
+            var full = Path.GetFullPath(path);
+            if (full.StartsWith(Path.GetFullPath(DataStore.Root).TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                Dialogs.Warn(this, "データ フォルダーの中には保存できません。ドキュメントや USB メモリなど、別の場所を選んでください。");
+                return null;
+            }
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                int n = HubBackup.Create(DataStore.Root, path, suiteVersion ?? AppInfo.Version, DateTime.Now);
+                footer.StatusText = "バックアップしました: " + Path.GetFileName(path) + " (" + n + " 個のファイル、" + HubBackup.SizeText(new FileInfo(path).Length) + ")";
+                return path;
+            }
+            catch (Exception ex)
+            {
+                DataStore.Log("backup: " + ex);
+                Dialogs.Error(this, "バックアップできませんでした。\n\n" + ex.Message);
+                return null;
+            }
+            finally { Cursor = Cursors.Default; }
+        }
+
+        /// <summary>バックアップから復元 (実行中のアプリは先に終了する)。書き戻したファイルの数 (やめたら -1)</summary>
+        public async Task<int> RestoreData()
+        {
+            string path;
+            if (PickBackupOpen != null) path = PickBackupOpen(null);
+            else
+                using (var dlg = new OpenFileDialog { Title = "バックアップから復元", Filter = "zip ファイル (*.zip)|*.zip|すべてのファイル (*.*)|*.*" })
+                    path = dlg.ShowDialog(this) == DialogResult.OK ? dlg.FileName : null;
+            if (path == null) return -1;
+            var info = HubBackup.Inspect(path);
+            if (!info.Valid) { Dialogs.Warn(this, "このファイルからは復元できません。\n\n" + info.Error); return -1; }
+            RefreshStatus();
+            var running = cards.Where(c => c.Pids.Count > 0).ToList();
+            var msg = "このバックアップでデータを上書きしますか?\n\n"
+                + "作成日時: " + (info.Created == DateTime.MinValue ? "不明" : info.Created.ToString("yyyy/MM/dd HH:mm")) + " ・ バージョン " + (info.Version ?? "不明") + "\n"
+                + "中身: " + info.FileCount + " 個のファイル (" + string.Join("、", info.Apps) + ")\n\n"
+                + "・今のデータは、復元の前に自動で残します (Teal Hub のデータ フォルダーの backups)。\n"
+                + (running.Count > 0 ? "・実行中のアプリ (" + string.Join("、", running.Select(c => c.App.Name)) + ") は終了します。\n" : "")
+                + (info.HasProtected ? "・Teal Pass の保管庫と Teal Clip の履歴は、バックアップしたときと同じ Windows ユーザーでないと開けません。\n" : "");
+            if (!Ask(msg, "バックアップから復元")) return -1;
+            foreach (var c in running)
+                if (!await StopApp(c, true)) { Dialogs.Warn(this, c.App.Name + " を終了できなかったので、復元をやめました。"); return -1; }
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                var now = DateTime.Now;
+                int n = HubBackup.Restore(path, DataStore.Root, HubBackup.SafetyPath(DataStore.Root, now), suiteVersion ?? AppInfo.Version, now);
+                LoadManifest();
+                footer.StatusText = "バックアップから " + n + " 個のファイルを復元しました";
+                if (ConfirmHook == null) Dialogs.Info(this, "復元しました (" + n + " 個のファイル)。\nアプリを開くと、復元したデータが使われます。\n\n元に戻したいときは、Teal Hub のデータ フォルダーの backups にある before-restore-… の zip から復元できます。");
+                return n;
+            }
+            catch (Exception ex)
+            {
+                DataStore.Log("restore: " + ex);
+                Dialogs.Error(this, "復元できませんでした。\n\n" + ex.Message + "\n\n復元の前のデータは Teal Hub のデータ フォルダーの backups に残っています。");
+                return -1;
+            }
+            finally { Cursor = Cursors.Default; }
+        }
+
+        /// <summary>通知領域の「アプリを開く」: 起動していなければ起動、起動中なら前面へ</summary>
+        public void OpenApp(string appId)
+        {
+            var card = CardFor(appId);
+            if (card == null) return;
+            RefreshStatus();
+            StartOrShow(card, null);
+        }
 
         void ChooseUpdateFile()
         {

@@ -21,8 +21,23 @@ namespace TealSuite.Pass
         [DataMember(Name = "memo", Order = 6)] public string Memo = "";
         [DataMember(Name = "created", Order = 7)] public DateTime Created = DateTime.Now;
         [DataMember(Name = "updated", Order = 8)] public DateTime Updated = DateTime.Now;
+        /// <summary>1.8.0: ★お気に入り (一覧の上に出す)</summary>
+        [DataMember(Name = "favorite", Order = 9, EmitDefaultValue = false)] public bool Favorite;
+        /// <summary>1.8.0: パスワードを最後に変えた日時 (1.7 までのデータには無い → 作成日時を使う)</summary>
+        [DataMember(Name = "passwordChanged", Order = 10, EmitDefaultValue = false)] public DateTime? PasswordChanged;
+        /// <summary>1.8.0: 以前のパスワード (新しい順に最大 PassTools.HistoryMax 件。vault.dat ごと暗号化される)</summary>
+        [DataMember(Name = "history", Order = 11, EmitDefaultValue = false)] public List<PasswordHistoryItem> History;
 
-        public VaultEntry Clone() { return (VaultEntry)MemberwiseClone(); }
+        /// <summary>パスワードを最後に変えた日時 (記録がなければ作成日時)</summary>
+        [IgnoreDataMember] public DateTime PasswordDate { get { return PasswordChanged ?? Created; } }
+        [IgnoreDataMember] public int HistoryCount { get { return History == null ? 0 : History.Count; } }
+
+        public VaultEntry Clone()
+        {
+            var c = (VaultEntry)MemberwiseClone();
+            if (History != null) c.History = History.Select(h => new PasswordHistoryItem { Password = h.Password, Changed = h.Changed }).ToList();
+            return c;
+        }
         public bool Matches(string q)
         {
             if (string.IsNullOrEmpty(q)) return true;
@@ -30,6 +45,14 @@ namespace TealSuite.Pass
             return (Site ?? "").IndexOf(q, c) >= 0 || (Url ?? "").IndexOf(q, c) >= 0
                 || (UserId ?? "").IndexOf(q, c) >= 0 || (Memo ?? "").IndexOf(q, c) >= 0;
         }
+    }
+
+    [DataContract]
+    public class PasswordHistoryItem
+    {
+        [DataMember(Name = "password", Order = 1)] public string Password = "";
+        /// <summary>このパスワードをやめた (新しいものに変えた) 日時</summary>
+        [DataMember(Name = "changed", Order = 2)] public DateTime Changed = DateTime.Now;
     }
 
     [DataContract]

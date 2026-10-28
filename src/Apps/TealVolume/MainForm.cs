@@ -154,11 +154,171 @@ namespace TealSuite.Volume
         public string FooterText { get { return footer.StatusText; } }
         public string HotkeyText { get { return hotkeyText; } set { hotkeyText = value; UpdateDetail(); UpdateFooter(); } }
 
+        // ---------- 1.8.0: プリセット・まとめてミュート・固定 / 非表示 ----------
+        VmSettings prefs = new VmSettings();
+        /// <summary>保存する設定 (常駐部分が読み込んだものを渡す)</summary>
+        public VmSettings Prefs { get { return prefs; } set { prefs = value ?? new VmSettings(); prefs.Normalize(); RefreshAll(true); } }
+        /// <summary>設定を保存する処理</summary>
+        public Action SavePrefs;
+        /// <summary>隠したアプリも一覧に出すか</summary>
+        public bool ShowHidden { get { return showHidden; } set { showHidden = value; RefreshAll(true); } }
+        bool showHidden;
+        List<AudioApp> lastApps = new List<AudioApp>();
+        /// <summary>今一覧に出ている行 (テスト用)</summary>
+        public List<VolumeRow> Rows { get { return appList.Controls.OfType<VolumeRow>().OrderBy(r => r.Top).ToList(); } }
+        public ContextMenuStrip PresetMenu { get { return presetMenu; } }
+        public ContextMenuStrip MoreMenu { get { return moreMenu; } }
+        readonly ContextMenuStrip presetMenu = new ContextMenuStrip(), moreMenu = new ContextMenuStrip();
+        FlatButton btnMuteAll;
+        public string LastMessage { get; private set; }
+
+        void Save() { if (SavePrefs != null) SavePrefs(); }
+
+        List<AudioApp> Current()
+        {
+            if (audio == null) return new List<AudioApp>();
+            try { lastApps = audio.Refresh(); } catch (Exception ex) { DataStore.Log("refresh: " + ex); }
+            return lastApps;
+        }
+
+        /// <summary>音を出しているアプリを全部ミュート (全部ミュート中なら全部解除)</summary>
+        public void ToggleMuteAll()
+        {
+            if (audio == null) return;
+            bool muted = VolumeLogic.ToggleMuteAll(audio, Current());
+            Flash(muted ? "すべてのアプリをミュートしました" : "すべてのアプリのミュートを解除しました");
+            RefreshAll(true);
+        }
+
+        public bool AllAppsMuted() { return VolumeLogic.AllMuted(Current()); }
+
+        public void ApplyPreset(VolumePreset p)
+        {
+            if (audio == null || p == null) return;
+            int n = VolumeLogic.Apply(p, audio, Current());
+            int missing = (p.Apps ?? new List<PresetApp>()).Count(pa => !lastApps.Any(a => string.Equals(a.Key, pa.Key, StringComparison.OrdinalIgnoreCase)));
+            Flash("プリセット「" + p.Name + "」を適用しました (" + n + " 個のアプリ" + (missing > 0 ? "、起動していない " + missing + " 個はとばしました" : "") + ")");
+            RefreshAll(true);
+        }
+
+        /// <summary>今の音量をプリセットに保存 (テストからも呼ぶ)</summary>
+        public bool SavePreset(string name, bool includeMaster)
+        {
+            if (audio == null) return false;
+            var p = VolumeLogic.Capture(name, audio, Current(), includeMaster);
+            if (!VolumeLogic.Save(prefs.Presets, p))
+            {
+                Flash("プリセットは " + VolumeLogic.MaxPresets + " 個までです。使わないものを削除してください");
+                return false;
+            }
+            Save();
+            Flash("プリセット「" + p.Name + "」を保存しました");
+            return true;
+        }
+
+        public void DeletePreset(VolumePreset p)
+        {
+            if (prefs.Presets.Remove(p)) { Save(); Flash("プリセット「" + p.Name + "」を削除しました"); }
+        }
+
+        public void TogglePin(string key)
+        {
+            if (!VolumeLogic.IsStable(key)) return;
+            VolumeLogic.Toggle(prefs.Pinned, key); Save(); RefreshAll(true);
+        }
+
+        public void ToggleHidden(string key)
+        {
+            if (!VolumeLogic.IsStable(key)) return;
+            bool hid = VolumeLogic.Toggle(prefs.Hidden, key); Save();
+            if (hid) Flash("一覧から隠しました。「その他」→「隠したアプリも表示」で戻せます");
+            RefreshAll(true);
+        }
+
+        void Flash(string msg)
+        {
+            LastMessage = msg;
+            footer.StatusText = msg;
+            flashUntil = DateTime.Now.AddSeconds(4);
+        }
+        DateTime flashUntil;
+
+        void BuildPresetMenu()
+        {
+            presetMenu.Items.Clear();
+            foreach (var p in prefs.Presets.ToArray())
+            {
+                var pp = p;
+                var mi = new ToolStripMenuItem(p.Name, null, (s, e) => ApplyPreset(pp)) { ToolTipText = p.Summary };
+                presetMenu.Items.Add(mi);
+            }
+            if (prefs.Presets.Count == 0) presetMenu.Items.Add(new ToolStripMenuItem("まだプリセットはありません") { Enabled = false });
+            presetMenu.Items.Add(new ToolStripSeparator());
+            presetMenu.Items.Add(new ToolStripMenuItem("今の音量をプリセットに保存…", null, (s, e) =>
+            {
+                using (var f = new PresetNameForm(""))
+                    if (f.ShowDialog(this) == DialogResult.OK)
+                    {
+                        var exists = prefs.Presets.FirstOrDefault(x => string.Equals(x.Name, f.PresetName, StringComparison.CurrentCultureIgnoreCase));
+                        if (exists != null && !Dialogs.Confirm(this, "プリセット「" + exists.Name + "」を今の音量で上書きしますか?")) return;
+                        SavePreset(f.PresetName, f.MasterSwitch.Checked);
+                    }
+            }));
+            if (prefs.Presets.Count > 0)
+            {
+                var del = new ToolStripMenuItem("プリセットを削除");
+                foreach (var p in prefs.Presets.ToArray())
+                {
+                    var pp = p;
+                    del.DropDownItems.Add(new ToolStripMenuItem(p.Name, null, (s, e) => { if (Dialogs.Confirm(this, "プリセット「" + pp.Name + "」を削除しますか?")) DeletePreset(pp); }));
+                }
+                presetMenu.Items.Add(del);
+            }
+        }
+
+        void BuildMoreMenu()
+        {
+            moreMenu.Items.Clear();
+            moreMenu.Items.Add(new ToolStripMenuItem("最新の状態に更新 (F5)", null, (s, e) => RefreshAll(true)));
+            moreMenu.Items.Add(new ToolStripSeparator());
+            var hiddenCount = prefs.Hidden.Count;
+            moreMenu.Items.Add(new ToolStripMenuItem("隠したアプリも表示 (" + hiddenCount + ")", null, (s, e) => ShowHidden = !ShowHidden) { Checked = showHidden, Enabled = hiddenCount > 0 || showHidden });
+            moreMenu.Items.Add(new ToolStripMenuItem("隠したアプリをすべて戻す", null, (s, e) => { prefs.Hidden.Clear(); Save(); RefreshAll(true); }) { Enabled = hiddenCount > 0 });
+            moreMenu.Items.Add(new ToolStripMenuItem("固定をすべて外す", null, (s, e) => { prefs.Pinned.Clear(); Save(); RefreshAll(true); }) { Enabled = prefs.Pinned.Count > 0 });
+            moreMenu.Items.Add(new ToolStripSeparator());
+            moreMenu.Items.Add(new ToolStripMenuItem("Windows の音量ミキサーを開く", null, (s, e) => { try { Process.Start("ms-settings:apps-volume"); } catch { try { Process.Start("sndvol.exe"); } catch { } } }));
+        }
+
+        ContextMenuStrip RowMenu(VolumeRow row)
+        {
+            var m = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
+            m.Opening += (s, e) =>
+            {
+                m.Items.Clear();
+                var a = row.App;
+                if (a == null || !VolumeLogic.IsStable(a.Key)) { m.Items.Add(new ToolStripMenuItem("このアプリは固定・非表示にできません") { Enabled = false }); return; }
+                bool pinned = VolumeLogic.Contains(prefs.Pinned, a.Key), hidden = VolumeLogic.Contains(prefs.Hidden, a.Key);
+                m.Items.Add(new ToolStripMenuItem(pinned ? "上への固定を外す" : "いちばん上に固定", null, (s2, e2) => TogglePin(a.Key)));
+                m.Items.Add(new ToolStripMenuItem(hidden ? "一覧に戻す" : "一覧から隠す", null, (s2, e2) => ToggleHidden(a.Key)));
+                m.Items.Add(new ToolStripSeparator());
+                m.Items.Add(new ToolStripMenuItem(a.Muted ? "ミュートを解除" : "ミュート", null, (s2, e2) => { audio.SetMute(a, !a.Muted); RefreshAll(true); }));
+                m.Items.Add(new ToolStripMenuItem("100% にする", null, (s2, e2) => { audio.SetVolume(a, 1f); RefreshAll(true); }));
+                m.Items.Add(new ToolStripMenuItem("50% にする", null, (s2, e2) => { audio.SetVolume(a, 0.5f); RefreshAll(true); }));
+            };
+            return m;
+        }
+
+        static void SetMenuDeep(Control c, ContextMenuStrip m)
+        {
+            c.ContextMenuStrip = m;
+            foreach (Control k in c.Controls) SetMenuDeep(k, m);
+        }
+
         public MainForm()
         {
             Theme.ApplyForm(this);
             Text = AppInfo.WindowTitle;
-            MinimumSize = Theme.S(520, 380);
+            MinimumSize = Theme.S(780, 380); // 1.8.0: ヘッダーのボタンが増えたので、タイトルが欠けない幅にする
             KeyPreview = true;
 
             demo = !AppInfo.IsWindows || Environment.GetEnvironmentVariable("TEALSUITE_DEMO") == "1";
@@ -168,15 +328,19 @@ namespace TealSuite.Volume
             genericIcon = Glyph(Theme.SubText, false); systemIcon = Glyph(Theme.Accent, true); speakerIcon = Glyph(Theme.Accent, false);
 
             header = HeaderBar.ForApp("");
-            var btnRefresh = header.AddAction(new FlatButton("更新", ButtonKind.Secondary));
-            var btnWin = header.AddAction(new FlatButton("Windows の設定", ButtonKind.Ghost));
+            btnMuteAll = header.AddAction(new FlatButton("すべてミュート", ButtonKind.Secondary));
+            var btnPresets = header.AddAction(new FlatButton("プリセット ▾", ButtonKind.Secondary));
+            var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Ghost));
             var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Ghost));
+            presetMenu.Font = moreMenu.Font = Theme.Body;
+            presetMenu.ShowImageMargin = false; presetMenu.ShowItemToolTips = true;
+            btnMuteAll.Click += (s, e) => ToggleMuteAll();
+            new ToolTip().SetToolTip(btnMuteAll, "音を出しているアプリをまとめてミュート / 解除 (全体の音量はそのまま)");
+            btnPresets.Click += (s, e) => { BuildPresetMenu(); presetMenu.Show(btnPresets, new Point(0, btnPresets.Height)); };
+            new ToolTip().SetToolTip(btnPresets, "「会議」「ゲーム」など、アプリごとの音量の組み合わせを保存・適用");
+            btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
             btnSettings.Click += (s, e) => { if (SettingsRequested != null) SettingsRequested(); };
             new ToolTip().SetToolTip(btnSettings, "ショートカット・常駐・スタートアップの設定 (Teal Hub で開きます)");
-            btnRefresh.Click += (s, e) => RefreshAll(true);
-            btnWin.Click += (s, e) => { try { Process.Start("ms-settings:apps-volume"); } catch { try { Process.Start("sndvol.exe"); } catch { } } };
-            new ToolTip().SetToolTip(btnRefresh, "最新の状態に更新 (F5)");
-            new ToolTip().SetToolTip(btnWin, "Windows の「音量ミキサー」設定を開く");
 
             // 全体
             var masterCard = new CardPanel("全体の音量") { Dock = DockStyle.Top, Height = Theme.S(40 + 58 + 10), Padding = new Padding(1, Theme.S(40), 1, Theme.S(6)) };
@@ -198,7 +362,7 @@ namespace TealSuite.Volume
             body.Controls.Add(masterCard);
             Controls.Add(body); Controls.Add(footer); Controls.Add(header);
 
-            WindowMemory.Attach(this, 720, 620);
+            WindowMemory.Attach(this, 800, 620);
             timer.Interval = 1500;
             timer.Tick += (s, e) => RefreshAll(false);
             // 表示されたら最新の状態に更新して監視を始める。隠れている間は止める
@@ -274,6 +438,10 @@ namespace TealSuite.Volume
             List<AudioApp> apps;
             try { apps = audio.Refresh(); }
             catch (Exception ex) { DataStore.Log("refresh: " + ex); footer.StatusText = "更新に失敗しました: " + ex.Message; return; }
+            lastApps = apps;
+            hiddenNow = apps.Count(a => VolumeLogic.Contains(prefs.Hidden, a.Key));
+            apps = VolumeLogic.Arrange(apps, prefs.Pinned, prefs.Hidden, showHidden);
+            if (btnMuteAll != null) btnMuteAll.Text = VolumeLogic.AllMuted(lastApps) ? "ミュート解除" : "すべてミュート";
 
             UpdateDetail();
             masterRow.Title = audio.DeviceName != null ? ShortDevice(audio.DeviceName) : "スピーカー";
@@ -296,6 +464,7 @@ namespace TealSuite.Volume
                     row.Mute.Click += (s, e) => { if (row.App == null) return; audio.SetMute(row.App, !row.App.Muted); row.Show(row.Slider.Value, row.App.Muted); UpdateSub(row); };
                     rows[key] = row;
                     appList.Controls.Add(row);
+                    SetMenuDeep(row, RowMenu(row));
                 }
                 // Dock=Top は後から前面に来たものほど上 → 表示順に並べ直す
                 var ordered = new Dictionary<string, VolumeRow>();
@@ -312,16 +481,19 @@ namespace TealSuite.Volume
                 UpdateSub(row);
             }
             empty.Visible = apps.Count == 0; appList.Visible = apps.Count > 0;
+            if (apps.Count == 0 && hiddenNow > 0) empty.Text = "表示するアプリはありません (隠したアプリ " + hiddenNow + " 個)。\n「その他」→「隠したアプリも表示」で表示できます。";
+            else empty.Text = "音を出しているアプリはありません。\nアプリで音を再生すると、ここに表示されます。";
             appCount = apps.Count;
             UpdateFooter();
         }
 
-        int appCount = -1;
+        int appCount = -1, hiddenNow;
         // 下の帯: ショートカット (Alt + V で開閉) とスライダーの操作説明
         void UpdateFooter()
         {
             if (appCount < 0) return;
-            footer.StatusText = (hotkeyText != null ? hotkeyText + " ・ " : "") + appCount + " 個のアプリ ・ ドラッグで 1% ずつ、Shift を押しながらで 5% ずつ";
+            if (DateTime.Now < flashUntil) return;
+            footer.StatusText = (hotkeyText != null ? hotkeyText + " ・ " : "") + appCount + " 個のアプリ" + (hiddenNow > 0 && !showHidden ? " (隠した " + hiddenNow + " 個)" : "") + " ・ Shift + ドラッグで 5% ずつ ・ 右クリックで固定・非表示";
         }
 
         static string ShortDevice(string n) { return n; }
@@ -364,10 +536,13 @@ namespace TealSuite.Volume
             }
         }
 
-        static void UpdateSub(VolumeRow row)
+        void UpdateSub(VolumeRow row)
         {
             var a = row.App; if (a == null) return;
-            row.SubText = a.Muted ? "ミュート中" : a.IsSystem ? "通知音など" : a.Active ? "再生中" : "待機中";
+            var t = a.Muted ? "ミュート中" : a.IsSystem ? "通知音など" : a.Active ? "再生中" : "待機中";
+            if (VolumeLogic.Contains(prefs.Pinned, a.Key)) t = "固定 ・ " + t;
+            if (VolumeLogic.Contains(prefs.Hidden, a.Key)) t = "非表示 ・ " + t;
+            row.SubText = t;
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

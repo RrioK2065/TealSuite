@@ -7,8 +7,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Sub - サブスク整理")]
 [assembly: AssemblyDescription("契約中のサブスクの金額・更新日・使い方をまとめて見直すアプリ")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.7.0.0")]
-[assembly: AssemblyFileVersion("1.7.0.0")]
+[assembly: AssemblyVersion("1.8.0.0")]
+[assembly: AssemblyFileVersion("1.8.0.0")]
 
 namespace TealSuite.Sub
 {

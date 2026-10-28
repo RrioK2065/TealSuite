@@ -30,6 +30,7 @@ for /d %%D in (src\Apps\*) do (
 )
 copy /y apps.json "%OUT%\apps.json" >nul
 if exist docs\README.txt copy /y docs\README.txt "%OUT%\README.txt" >nul
+if exist CHANGELOG.md copy /y CHANGELOG.md "%OUT%\CHANGELOG.md" >nul
 if not "%FAILED%"=="0" ( echo. & echo BUILD FAILED & exit /b 1 )
 echo. & echo Done: %BUILT% app^(s^) built into %OUT%
 exit /b 0

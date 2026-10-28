@@ -56,6 +56,14 @@ static class SmokeTests
         Run("Teal Sub: 更新日・合計・見直し候補・お知らせ", () => SubTasksTests.RunSub(Check));
         Run("Teal Tasks: ひとこと入力・優先度・くり返し・お知らせ・統計", () => SubTasksTests.RunTasks(Check));
         Run("Teal Tasks / Teal Sub: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
+        Run("1.8.0 Teal Memo: ピン留め・タグ・ゴミ箱・読み込み (文字コード・CSV)", () => V180Tests.RunMemo(Check));
+        Run("1.8.0 Teal Pass: 変更履歴・パスワードの点検・CSV", () => V180Tests.RunPass(Check));
+        Run("1.8.0 Teal Clip: 履歴の数・自動削除・定型文・検索・除外", () => V180Tests.RunClip(Check));
+        Run("1.8.0 Teal Volume: プリセット・すべてミュート・固定と非表示", () => V180Tests.RunVolume(Check));
+        Run("1.8.0 Teal Hub: バックアップと復元・更新内容", () => V180Tests.RunHub(Check, tmp));
+        Run("1.8.0 Teal Sub: 値上げの記録・予算・支払い予定・CSV 読み込み", () => V180Tests.RunSub(Check));
+        Run("1.8.0 Teal Tasks: 平日・毎年・テンプレート・まとめて追加・整理", () => V180Tests.RunTasks(Check));
+        Run("1.8.0 Teal Tasks: 画面 (その他メニュー)", () => V180Tests.RunTasksUi(Check));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
@@ -146,7 +154,7 @@ static class SmokeTests
         Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.7.0"), "バージョン 1.7.0");
+        Check(apps.All(a => a.Version == "1.8.0"), "バージョン 1.8.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
@@ -274,8 +282,8 @@ static class SmokeTests
         PM::TealSuite.Common.AppInfo.Init("TealPass", "Teal Pass", "");
         var v = new PM::TealSuite.Pass.VaultFile();
         Func<int, string> gen = len => PM::TealSuite.Pass.PasswordGenerator.Generate(new PM::TealSuite.Pass.PasswordOptions { Length = len });
-        v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Amazon", Url = "https://www.amazon.co.jp", UserId = "taro@example.com", Password = gen(16), Memo = "プライム会員。支払いは楽天カード", Updated = DateTime.Now.AddDays(-3) });
-        v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Google", Url = "https://accounts.google.com", UserId = "taro.yamada@gmail.com", Password = gen(20), Memo = "2 段階認証はスマホのアプリ\n予備コードは机の引き出し", Updated = DateTime.Now.AddDays(-12) });
+        v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Amazon", Url = "https://www.amazon.co.jp", UserId = "taro@example.com", Password = gen(16), Memo = "プライム会員。支払いは楽天カード", Updated = DateTime.Now.AddDays(-3), Favorite = true });
+        v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Google", Url = "https://accounts.google.com", UserId = "taro.yamada@gmail.com", Password = gen(20), Memo = "2 段階認証はスマホのアプリ\n予備コードは机の引き出し", Updated = DateTime.Now.AddDays(-12), Favorite = true });
         v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "みずほ銀行", Url = "https://www.mizuhobank.co.jp", UserId = "1234567890", Password = gen(12), Memo = "お客さま番号は通帳の表紙裏", Updated = DateTime.Now.AddDays(-40) });
         v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Netflix", Url = "https://www.netflix.com", UserId = "taro@example.com", Password = "netflix2024", Memo = "家族で共有", Updated = DateTime.Now.AddDays(-80) });
         v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "会社の VPN", Url = "", UserId = "t.yamada", Password = gen(24), Memo = "90 日ごとに変更", Updated = DateTime.Now.AddDays(-1) });
@@ -284,12 +292,26 @@ static class SmokeTests
         MEMO::TealSuite.Common.AppInfo.Init("TealMemo", "Teal Memo", "");
         var notes = new MEMO::TealSuite.Memo.NoteFile();
         Action<string, int> add = (t, h) => { var n = MEMO::TealSuite.Memo.Note.Create(); n.Text = t; n.Updated = DateTime.UtcNow.AddHours(-h).ToString("o"); notes.Notes.Add(n); };
-        add("買い物リスト\r\n・牛乳\r\n・卵\r\n・食パン\r\n・洗剤 (詰め替え)", 1);
-        add("来週の予定\r\n月: 歯医者 10:00\r\n水: 打ち合わせ 15:00 (第2会議室)\r\n金: 飲み会", 5);
-        add("読みたい本\r\n・三体\r\n・プロジェクト・ヘイル・メアリー", 30);
+        add("買い物リスト #買い物\r\n・牛乳\r\n・卵\r\n・食パン\r\n・洗剤 (詰め替え)", 1);
+        add("来週の予定 #予定\r\n月: 歯医者 10:00\r\n水: 打ち合わせ 15:00 (第2会議室)\r\n金: 飲み会", 5);
+        add("読みたい本 #本\r\n・三体\r\n・プロジェクト・ヘイル・メアリー", 30);
         add("Wi-Fi の場所\r\nルーターは本棚の上。再起動はコンセントを抜いて 10 秒", 72);
+        add("古いメモ\r\nもう使わない", 100);
+        notes.Notes[1].Pinned = true; // 1.8.0: ピン留め
+        notes.Notes[4].Deleted = DateTime.UtcNow.AddDays(-3).ToString("o"); // 1.8.0: ゴミ箱
         MEMO::TealSuite.Memo.NoteStore.Save(notes);
         SubTasksTests.Seed(dir);
+        // 1.8.0: Teal Volume のプリセット (見本の音量)
+        VM::TealSuite.Common.AppInfo.Init("TealVolume", "Teal Volume", "");
+        var vs = new VM::TealSuite.Volume.VmSettings { Presets = new List<VM::TealSuite.Volume.VolumePreset>() };
+        Func<string, int, int, int, VM::TealSuite.Volume.VolumePreset> pre = (name, chrome, spotify, zoom) => new VM::TealSuite.Volume.VolumePreset { Name = name, Master = 60, Apps = new List<VM::TealSuite.Volume.PresetApp> {
+            new VM::TealSuite.Volume.PresetApp { Key = "chrome", Name = "Google Chrome", Volume = chrome },
+            new VM::TealSuite.Volume.PresetApp { Key = "spotify", Name = "Spotify", Volume = spotify, Muted = spotify == 0 },
+            new VM::TealSuite.Volume.PresetApp { Key = "teams", Name = "Microsoft Teams", Volume = zoom } } };
+        vs.Presets.Add(pre("会議", 20, 0, 100));
+        vs.Presets.Add(pre("作業中 (BGM)", 50, 35, 80));
+        vs.Presets.Add(pre("ゲーム", 100, 15, 60));
+        VM::TealSuite.Common.DataStore.Save(VM::TealSuite.Volume.VolumeTray.SettingsFile, vs);
         Console.WriteLine("seeded " + dir);
     }
 }

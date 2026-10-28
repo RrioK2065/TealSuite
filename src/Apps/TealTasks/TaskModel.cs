@@ -7,7 +7,7 @@ using TealSuite.Common;
 
 namespace TealSuite.Tasks
 {
-    public enum Repeat { None, Daily, Weekly, Monthly }
+    public enum Repeat { None, Daily, Weekly, Monthly, Weekdays, Yearly }
 
     [DataContract]
     public class SubTask
@@ -31,7 +31,7 @@ namespace TealSuite.Tasks
         [DataMember(Name = "minutes", Order = 5, EmitDefaultValue = false)] public int DurationMin;
         [DataMember(Name = "tags", Order = 6)] public List<string> Tags = new List<string>();
         [DataMember(Name = "memo", Order = 7, EmitDefaultValue = false)] public string Memo;
-        /// <summary>none / daily / weekly / monthly</summary>
+        /// <summary>none / daily / weekly / monthly / weekdays (1.8.0) / yearly (1.8.0)</summary>
         [DataMember(Name = "repeat", Order = 8)] public string RepeatText = "none";
         [DataMember(Name = "done", Order = 9)] public bool Done;
         [DataMember(Name = "doneAt", Order = 10, EmitDefaultValue = false)] public string DoneAt;
@@ -43,8 +43,8 @@ namespace TealSuite.Tasks
         [IgnoreDataMember]
         public Repeat Repeat
         {
-            get { switch (RepeatText) { case "daily": return Repeat.Daily; case "weekly": return Repeat.Weekly; case "monthly": return Repeat.Monthly; default: return Repeat.None; } }
-            set { RepeatText = value == Repeat.Daily ? "daily" : value == Repeat.Weekly ? "weekly" : value == Repeat.Monthly ? "monthly" : "none"; }
+            get { switch (RepeatText) { case "daily": return Repeat.Daily; case "weekly": return Repeat.Weekly; case "monthly": return Repeat.Monthly; case "weekdays": return Repeat.Weekdays; case "yearly": return Repeat.Yearly; default: return Repeat.None; } }
+            set { RepeatText = value == Repeat.Daily ? "daily" : value == Repeat.Weekly ? "weekly" : value == Repeat.Monthly ? "monthly" : value == Repeat.Weekdays ? "weekdays" : value == Repeat.Yearly ? "yearly" : "none"; }
         }
         [IgnoreDataMember] public bool HasDue { get { return DueAt.HasValue; } }
         /// <summary>時刻まで決まっているか</summary>
@@ -82,6 +82,8 @@ namespace TealSuite.Tasks
         [DataMember(Name = "settings", Order = 3)] public TaskSettings Settings = new TaskSettings();
         /// <summary>お知らせ済みの印。同じお知らせを何度も出さない</summary>
         [DataMember(Name = "notified", Order = 4)] public List<string> Notified = new List<string>();
+        /// <summary>1.8.0: よく使うタスクのひな形</summary>
+        [DataMember(Name = "templates", Order = 5, EmitDefaultValue = false)] public List<TaskTemplate> Templates;
 
         public TaskItem Find(string id) { return Tasks.FirstOrDefault(t => t.Id == id); }
 
@@ -92,6 +94,12 @@ namespace TealSuite.Tasks
             if (Settings == null) Settings = new TaskSettings();
             if (Notified == null) Notified = new List<string>();
             Settings.RemindMinutes = Math.Max(0, Math.Min(24 * 60, Settings.RemindMinutes));
+            if (Templates != null)
+            {
+                Templates.RemoveAll(x => x == null || x.Task == null || string.IsNullOrWhiteSpace(x.Name));
+                foreach (var x in Templates) { if (x.Task.Tags == null) x.Task.Tags = new List<string>(); if (x.Task.Subtasks == null) x.Task.Subtasks = new List<SubTask>(); }
+                if (Templates.Count == 0) Templates = null;
+            }
             foreach (var t in Tasks)
             {
                 if (string.IsNullOrEmpty(t.Id)) t.Id = Guid.NewGuid().ToString("N");

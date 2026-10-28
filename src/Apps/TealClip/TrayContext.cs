@@ -16,6 +16,12 @@ namespace TealSuite.Clip
     {
         public readonly History History;
         readonly ChSettings settings;
+        ToolStripMenuItem miPause;
+        /// <summary>1.8.0: 記録の一時停止 (次に起動したときは記録する状態に戻る)</summary>
+        public bool Paused { get; private set; }
+        /// <summary>最後に記録しなかった理由 (テスト・表示用)</summary>
+        public string LastSkip { get; private set; }
+        public ChSettings Settings { get { return settings; } }
         readonly ClipboardWatcher watcher;
         readonly NotifyIcon tray = new NotifyIcon();
         readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer();
@@ -47,7 +53,8 @@ namespace TealSuite.Clip
         public TrayContext(string[] args)
         {
             settings = DataStore.LoadQuiet(SettingsFile, () => new ChSettings());
-            History = HistoryStore.Load();
+            History = HistoryStore.Load(settings.HistorySize);
+            History.PurgeOlderThan(settings.AutoDeleteDays, DateTime.Now);
             if (Environment.GetEnvironmentVariable("TEALSUITE_DEMO") == "1" && History.Items.Count == 0) SeedDemo();
             History.Changed += () => { HistoryStore.Save(History); if (manager != null && !manager.IsDisposed) manager.RefreshList(); };
             LoadPrefs();
@@ -62,6 +69,8 @@ namespace TealSuite.Clip
             var menu = new ContextMenuStrip { Font = Theme.Body, ShowImageMargin = false };
             var miShow = new ToolStripMenuItem("履歴を表示", null, (s, e) => ShowManager()) { Font = Theme.Bold };
             menu.Items.Add(miShow);
+            miPause = new ToolStripMenuItem("記録を一時停止", null, (s, e) => SetPaused(!Paused));
+            menu.Items.Add(miPause);
             menu.Items.Add(new ToolStripMenuItem("設定 (Teal Hub)…", null, (s, e) => ShowSettings()));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("終了", null, (s, e) => ExitApp()));
@@ -118,8 +127,9 @@ namespace TealSuite.Clip
 
         string TrayTip()
         {
-            if (Hotkey.IsEmpty) return AppInfo.DisplayName;
-            var t = AppInfo.DisplayName + " (" + Hotkey.Display + ")";
+            var name = AppInfo.DisplayName + (Paused ? " - 一時停止中" : "");
+            if (Hotkey.IsEmpty) return name;
+            var t = name + " (" + Hotkey.Display + ")";
             return t.Length > 63 ? t.Substring(0, 63) : t;
         }
 
@@ -139,6 +149,40 @@ namespace TealSuite.Clip
             if (shown) return false;
             ExitApp();
             return true;
+        }
+
+        /// <summary>記録の一時停止・再開</summary>
+        public void SetPaused(bool on)
+        {
+            Paused = on;
+            if (miPause != null) { miPause.Checked = on; miPause.Text = on ? "記録を再開する" : "記録を一時停止"; }
+            tray.Text = TrayTip();
+            if (manager != null && !manager.IsDisposed) { manager.UpdateSubtitle(); manager.RefreshList(); }
+        }
+
+        /// <summary>記録の設定を保存して反映する。件数を減らして消えた件数</summary>
+        public int ApplySettings(int size, int autoDeleteDays, List<string> words, bool skipPasswords)
+        {
+            settings.HistorySize = History.ClampCapacity(size);
+            settings.AutoDeleteDays = Math.Max(0, autoDeleteDays);
+            settings.ExcludeWords = words == null || words.Count == 0 ? null : words;
+            settings.SkipPasswordLike = skipPasswords;
+            DataStore.TrySave(SettingsFile, settings);
+            int removed = History.SetCapacity(settings.HistorySize);
+            removed += History.PurgeOlderThan(settings.AutoDeleteDays, DateTime.Now);
+            if (manager != null && !manager.IsDisposed) manager.RefreshList();
+            return removed;
+        }
+
+        /// <summary>コピーされた文字を記録する (一時停止・除外を考える)。記録したら true</summary>
+        public bool Record(string text)
+        {
+            LastSkip = null;
+            if (Paused) { LastSkip = "一時停止中"; return false; }
+            var why = ClipFilter.SkipReason(text, settings);
+            if (why != null) { LastSkip = why; return false; }
+            History.PurgeOlderThan(settings.AutoDeleteDays, DateTime.Now);
+            return History.Add(text);
         }
 
         void SeedDemo()
@@ -193,7 +237,7 @@ namespace TealSuite.Clip
                     var text = Clipboard.GetText(TextDataFormat.UnicodeText);
                     if (string.IsNullOrEmpty(text)) text = Clipboard.GetText();
                     if (text == ownText && (DateTime.Now - ownTime).TotalSeconds < 3) return;
-                    History.Add(text);
+                    Record(text);
                     return;
                 }
                 catch (System.Runtime.InteropServices.ExternalException) { Thread.Sleep(40); } // 他アプリが使用中
@@ -243,6 +287,7 @@ namespace TealSuite.Clip
         // ---------- 画面 ----------
         public void ShowManager()
         {
+            History.PurgeOlderThan(settings.AutoDeleteDays, DateTime.Now);
             if (manager == null || manager.IsDisposed)
             {
                 manager = new HistoryForm(this);
