@@ -311,14 +311,60 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 1. `src/Apps/*/AppMeta.cs` と `apps.json` のバージョンを上げる (下の「バージョンを上げる」。スイートの版 = `suiteVersion`)
 2. `CHANGELOG.md` の先頭に `## x.y.z (日付)` の節を書く (これがリリースの説明文とアップデートの確認画面の説明になる)
 3. `./build.sh && tests/run_tests.sh` で確認 → main にマージ (push)
-4. Actions の **Release** (`.github/workflows/release.yml`) が `v<suiteVersion>` のタグがまだなければ:
-   ビルド → テスト (xvfb) → 前のリリースの `TealSuite-<前>.zip` を取得 → `tools/release_build.sh --prev …` →
-   `gh release create v<ver>` (zip・.tealupdate・.sha256)
+4. Actions の **Release** (`.github/workflows/release.yml`) が動く:
+   - `linux` … ビルド → テスト (xvfb) → 前のリリースの `TealSuite-<前>.zip` を取得 → `tools/release_build.sh --prev …` → 成果物 `release`
+   - `windows` … 本物の Windows で確かめる (下の「Windows のチェック」)
+   - `publish` … main への push で、`linux` と `windows` が両方通り、`v<suiteVersion>` のリリースがまだなければ
+     `gh release create v<ver>` (zip・.tealupdate・.sha256)。どちらかが失敗したら公開しない
 5. 利用者の Teal Hub が 1 日以内に見つけてお知らせする
+
+- プルリクエスト・main 以外のブランチへの push・手動実行 (Actions の画面の「Run workflow」) でも `linux` と `windows` は動く (公開はしない)
 
 - タグがもうあるときは何もしない (バージョンを上げ忘れた push で壊れない)。作り直すときはリリースとタグを消してから Actions を再実行
 - 手元で同じものを作る: `tools/release_build.sh [--prev 前の TealSuite-x.y.z.zip]` → `release/`
 - リリースは `GITHUB_TOKEN` (permissions: contents: write) で作る。GITHUB_TOKEN で作ったリリースは別のワークフローを起動しない
+- 全部入りの .tealupdate は `tools/retired-files.txt` (途中の版でなくなったファイル。例: 1.9.0 の `apps/TealSub/TealSub.exe`) も消す指示に入れる。
+  ファイルを消したり名前を変えたりした版では、ここに 1 行足す (古い版から一気に上げた人のところに残らないように)
+
+## Windows のチェック (GitHub Actions の windows-latest)
+
+ふだんの開発は Linux の mono でしているので、「Windows で本当に動くか」はここで確かめる。
+GitHub が無料で貸してくれる Windows のマシン (公開リポジトリなら無料) で、リリースの前に毎回自動で動く。
+1 つでも失敗すると、その版は公開されない。
+
+やっていること (上から順に。失敗しても残りは続けて、最後にまとめて失敗にする):
+
+1. **Windows の csc でビルド** … `build.ps1` が Windows に入っている .NET Framework の csc で全アプリとテストをビルドする
+   (mono でしか通らない書き方をしていないかの確認)。ソースと参照 DLL の一覧は build.sh と同じファイルを読む
+   (`tools/common-refs.txt`・`src/Apps/<id>/refs.txt`・テストは `tests/test-build.txt`)
+2. **テストを全部** … csc でビルドしたものと、実際に配る mono でビルドしたもの (linux で作った zip) の両方で
+   `tests/run_tests.ps1` を実行する。Windows では mono で飛ばしていたテストも動く:
+   - 本物の DPAPI (`tests/WinTests.cs`): Teal Pass の `vault.dat` (先頭 `PMV1` + DPAPI) と Teal Clip の `history.dat` が
+     本物の DPAPI の形式で、決まったエントロピーでだけ開けること (エントロピーは 1.0 から変えていない。変えると今までのデータが開けなくなる)
+   - 本物のレジストリ (HKCU の Run キー) にテスト用の名前で書いて読んで消す
+   - Teal Hub の「起動と終了」は、シェル スクリプトの代わりに `tests/win/Sleeper.cs` (画面のない眠るだけの exe) を使う
+3. **起動のチェック** (`tools/win/smoke.ps1`) … 各アプリを本当に起動して、画面が出ること・落ちないこと・
+   エラーのダイアログが出ないこと・error.log に例外がないことを確かめ、終了の合図で閉じることも確かめる。
+   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip は `/show` で画面を出す
+4. **アップデートのチェック** (`tools/win/update-test.ps1`) … 前のリリースの zip を展開し、前の版の Teal Hub と Teal Memo を起動しておいて、
+   新しい .tealupdate を「前の版に入っている本物の TealUpdater.exe」で当てる (画面の「アップデート」ボタンを自動で押す)。
+   バージョン・アプリの一覧・全ファイルのハッシュ・余分なファイルが残っていないこと・アプリが起動し直されることを確かめる。
+   1.8.0 からも試し、Teal Sub のデータ・ショートカット・スタートアップが Teal Wallet に引き継がれることを確かめる
+5. **スクリーンショットとログ** … Actions の実行結果の画面の下の「Artifacts」の `windows-check` に入る
+   (screenshots/ は各アプリの画面、logs/ はテストとチェックのログ)。スクリーンショットは撮れなくても失敗にはしない
+
+手元の Windows でも同じことができる (PowerShell で、リポジトリのフォルダから):
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1 -Tests
+powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1
+powershell -ExecutionPolicy Bypass -File tools\win\smoke.ps1 -Suite dist\TealSuite -Shots shots
+powershell -ExecutionPolicy Bypass -File tools\win\update-test.ps1 -PrevZip TealSuite-1.9.0.zip -Package TealSuite-update-1.9.1.tealupdate -Dist dist\TealSuite
+```
+
+失敗したとき: Actions の画面で赤くなった手順を開くとログが見られる (`FAIL` と `::error::` の行が原因)。
+`windows-check` の screenshots/ に、失敗したときの画面全体 (`*-screen-failed.png`) も入る。
+TealUpdater の画面を自動で押せなかったときは、前の版の UpdateEngine を直接呼んで続け、警告 (黄色) を出す (これは失敗にしない)。
 
 ## バージョンを上げる
 
@@ -398,8 +444,9 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 ## ビルド
 
 - Linux: `sudo apt install mono-devel` → `./build.sh` (特定のアプリだけ: `./build.sh TealMemo TealVolume`)
-- Windows: `build.bat` (追加のインストールは不要。`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe` を使用)
-- 共通の参照 DLL は build.sh の `COMMON_REFS` と build.bat の `REFS` の両方に書く。アプリ固有のものは refs.txt。
+- Windows: `build.ps1` (PowerShell。テストも作れる: `-Tests`) または `build.bat` (追加のインストールは不要。`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe` を使用)
+- 共通の参照 DLL は `tools/common-refs.txt` (build.sh・build.bat・build.ps1 が読む)。アプリ固有のものは refs.txt。
+- テストの参照とソースの一覧は `tests/test-build.txt` (run_tests.sh と build.ps1 が読む)。テストのファイルを足したらここに 1 行
 
 ## テスト (Linux / mono)
 
@@ -431,7 +478,9 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   `SHOT_ARGS="hub その他" tests/shot.sh build/V180Shots.exe out.png` (hub / volume / sub / tasks に、押すボタンの文字の先頭を付ける。tasks:bulk は「まとめて追加」)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
-- ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できないので、実機の Windows で確認する。
+- ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できない。
+  DPAPI・レジストリ・起動・アップデートは GitHub Actions の Windows で自動で確かめる (上の「Windows のチェック」)。それ以外は実機の Windows で確認する。
+- `V190Tests.cs` 以降: `WinTests.cs` (Windows だけ。mono では skip と出る)
 
 ## 配布
 

@@ -180,3 +180,4 @@ Teal Hub がインターネットに送るのは「最新のリリースを教�
 ## 開発者向け
 
 ビルド方法・リリースの手順は [DEVELOPING.md](DEVELOPING.md) にあります。
+リリースの前に、GitHub Actions の Windows の環境でビルド・テスト・各アプリの起動・前の版からのアップデートを自動で確かめています (1.9.1 から。DEVELOPING.md「Windows のチェック」)。

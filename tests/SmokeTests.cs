@@ -1,4 +1,4 @@
-// TealSuite スモークテスト (mono で実行: tests/run_tests.sh)
+// TealSuite スモークテスト (mono: tests/run_tests.sh、Windows: build.ps1 -Tests のあと tests/run_tests.ps1)
 // 各 exe を extern alias で参照し、画面以外のロジックを確かめる。
 extern alias PM;
 extern alias AM;
@@ -24,6 +24,8 @@ static class SmokeTests
 
     static int Main(string[] args)
     {
+        // Windows のコンソール (GitHub Actions のログ) でも日本語が文字化けしないように
+        if (WinTests.IsWindows) { try { Console.OutputEncoding = new System.Text.UTF8Encoding(false); } catch { } }
         string tmp = Path.Combine(Path.GetTempPath(), "tealsuite-test-" + Process.GetCurrentProcess().Id);
         Directory.CreateDirectory(tmp);
         Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", Path.Combine(tmp, "data"));
@@ -69,6 +71,8 @@ static class SmokeTests
         Run("1.9.0 Teal Wallet 買い物リスト: 画面", () => V190Tests.RunShopUi(Check));
         Run("1.9.0 Teal Sub → Teal Wallet: データ・設定・スタートアップ・バックアップの引き継ぎ", () => V190Tests.RunRename(Check, tmp));
         Run("1.9.0 アップデート: apps.json の付け替え・TealSub.exe の削除", () => V190Tests.RunUpdate(Check, dist));
+        Run("Windows: 本物の DPAPI (Teal Pass・Teal Clip)", () => WinTests.RunDpapi(Check));
+        Run("Windows: 本物のレジストリ (スタートアップの Run キー)", () => WinTests.RunRegistry(Check));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
@@ -159,7 +163,7 @@ static class SmokeTests
         Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.9.0"), "バージョン 1.9.0");
+        Check(apps.All(a => a.Version == "1.9.1"), "バージョン 1.9.1");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
@@ -184,15 +188,22 @@ static class SmokeTests
     {
         var dir = Path.Combine(tmp, "pc");
         Directory.CreateDirectory(dir);
-        var script = Path.Combine(dir, "dummy.sh");
-        File.WriteAllText(script, "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 0.2; done\n");
-        Process.Start("chmod", "+x " + script).WaitForExit();
-        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Dummy\",\"name\":\"ダミー\",\"exe\":\"dummy.sh\",\"version\":\"1.0.0\"}]}");
+        // Windows では build\Sleeper.exe (画面なし・終了の合図に応じない) を、mono ではシェル スクリプトを使う
+        bool win = WinTests.IsWindows;
+        var sleeper = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sleeper.exe");
+        var script = Path.Combine(dir, win ? "dummy.exe" : "dummy.sh");
+        if (win) File.Copy(sleeper, script, true);
+        else
+        {
+            File.WriteAllText(script, "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 0.2; done\n");
+            Process.Start("chmod", "+x " + script).WaitForExit();
+        }
+        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Dummy\",\"name\":\"ダミー\",\"exe\":\"" + Path.GetFileName(script) + "\",\"version\":\"1.0.0\"}]}");
         var apps = AM::TealSuite.Hub.Manifest.Load(Path.Combine(dir, "apps.json"));
         var ctl = new AM::TealSuite.Hub.ProcessControl();
         Check(ctl.Snapshot(apps)["Dummy"].Count == 0, "起動前は停止中");
         ctl.Start(apps[0]);
-        System.Threading.Thread.Sleep(500);
+        System.Threading.Thread.Sleep(win ? 1500 : 500);
         var pids = ctl.Snapshot(apps)["Dummy"];
         Check(pids.Count == 1, "起動後は実行中 (pid " + string.Join(",", pids) + ")");
         var sw = Stopwatch.StartNew();
@@ -203,13 +214,17 @@ static class SmokeTests
         Check(ctl.Snapshot(apps)["Dummy"].Count == 0, "終了後は停止中");
 
         // 素直に終わるアプリ
-        var quick = Path.Combine(dir, "quick.sh");
-        File.WriteAllText(quick, "#!/bin/sh\nsleep 30\n");
-        Process.Start("chmod", "+x " + quick).WaitForExit();
-        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Quick\",\"name\":\"q\",\"exe\":\"quick.sh\",\"version\":\"1.0.0\"}]}");
+        var quick = Path.Combine(dir, win ? "quick.exe" : "quick.sh");
+        if (win) File.Copy(sleeper, quick, true);
+        else
+        {
+            File.WriteAllText(quick, "#!/bin/sh\nsleep 30\n");
+            Process.Start("chmod", "+x " + quick).WaitForExit();
+        }
+        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Quick\",\"name\":\"q\",\"exe\":\"" + Path.GetFileName(quick) + "\",\"version\":\"1.0.0\"}]}");
         var apps2 = AM::TealSuite.Hub.Manifest.Load(Path.Combine(dir, "apps.json"));
         ctl.Start(apps2[0]);
-        System.Threading.Thread.Sleep(300);
+        System.Threading.Thread.Sleep(win ? 1500 : 300);
         var p2 = ctl.Snapshot(apps2)["Quick"];
         Check(p2.Count == 1, "2 つ目のアプリも検出");
         Check(ctl.Kill(p2) && ctl.Snapshot(apps2)["Quick"].Count == 0, "終了後に停止中へ戻る");

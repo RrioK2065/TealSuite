@@ -14,7 +14,7 @@ using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyVersion("1.9.0.0")]
+[assembly: AssemblyVersion("1.9.1.0")]
 
 static class V180Shots
 {

@@ -1,0 +1,33 @@
+# テスト (build/SmokeTests.exe) の作り方。tests/run_tests.sh (mono) と build.ps1 -Tests (Windows) がこのファイルを読む
+#   alias <名前> <dist/TealSuite からのパス>  … extern alias で参照する exe
+#   ref <DLL>                                  … 参照する DLL
+#   src <ファイル>                              … コンパイルするソース (リポジトリのルートから)
+alias PM apps/TealPass/TealPass.exe
+alias AM TealHub.exe
+alias MEMO apps/TealMemo/TealMemo.exe
+alias CH apps/TealClip/TealClip.exe
+alias VM apps/TealVolume/TealVolume.exe
+alias UP TealUpdater.exe
+alias SUB apps/TealWallet/TealWallet.exe
+alias TASKS apps/TealTasks/TealTasks.exe
+ref System.dll
+ref System.Core.dll
+ref System.Xml.dll
+ref System.Security.dll
+ref System.Windows.Forms.dll
+ref System.Drawing.dll
+ref System.IO.Compression.dll
+ref System.IO.Compression.FileSystem.dll
+ref System.Runtime.Serialization.dll
+src tests/SmokeTests.cs
+src tests/CHTests.cs
+src tests/VMTests.cs
+src tests/StartupTests.cs
+src tests/HotkeyTests.cs
+src tests/ShortcutTests.cs
+src tests/UpdaterTests.cs
+src tests/OnlineUpdateTests.cs
+src tests/SubTasksTests.cs
+src tests/V180Tests.cs
+src tests/V190Tests.cs
+src tests/WinTests.cs

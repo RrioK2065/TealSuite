@@ -98,6 +98,18 @@ def app_of(rel, apps):
     return ""
 
 
+def read_retired():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "retired-files.txt")
+    out = []
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    out.append(line.replace("\\", "/"))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="TealSuite のアップデート ファイルを作る")
     ap.add_argument("--dist", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dist", "TealSuite"))
@@ -143,6 +155,10 @@ def main():
           if not files and not deletes and not include_apps:
               die("前のバージョンと同じです (変わったファイルがありません)")
     min_from = min_from or FIRST_UPDATER_VERSION
+    if kind == "full":
+        # 全部入りのファイルは古い版 (minFromVersion 以降のどれでも) に当てられるので、
+        # 途中の版で消えたファイル (tools/retired-files.txt) も消す指示に入れる。無いファイルは何もしない
+        deletes = sorted(set(deletes) | {p for p in read_retired() if p not in files})
 
     entries = []
     for rel in sorted(files):

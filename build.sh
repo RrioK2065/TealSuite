@@ -1,5 +1,6 @@
 #!/bin/sh
 # TealSuite ビルドスクリプト (Linux / macOS, mono の mcs を使用)
+#   (Windows では build.ps1。ソース・参照・オプションは同じ: tools/common-refs.txt と src/Apps/<id>/refs.txt)
 #   使い方:  ./build.sh            … 全アプリをビルド
 #            ./build.sh TealMemo      … 指定したアプリだけ
 #            ./build.sh package-update [--from 前のdistかzip] [--out ファイル] [--notes 文]
@@ -14,9 +15,10 @@ if [ "$1" = "package-update" ]; then
   exec python3 "$ROOT/tools/package_update.py" --dist "$ROOT/dist/TealSuite" "$@"
 fi
 OUT="$ROOT/dist/TealSuite"
-# 全アプリ共通の参照。build.bat の REFS と同じにしておくこと
-COMMON_REFS="-r:System.dll -r:System.Core.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -r:System.Runtime.Serialization.dll -r:System.Xml.dll"
+# 全アプリ共通の参照は tools/common-refs.txt (build.bat・build.ps1 と共通)
+COMMON_REFS=$(grep -v '^[[:space:]]*#' "$ROOT/tools/common-refs.txt" | tr -d '\r' | sed '/^[[:space:]]*$/d; s/^[[:space:]]*/-r:/' | tr '\n' ' ')
 # -langversion:5 … Windows 標準の csc (C# 5) でもビルドできる書き方に限定する
+# build.ps1 (Windows の csc) も同じ意味のオプションを使う: /target:winexe /codepage:65001 /optimize+ /nowarn:1591
 MCS_FLAGS="-target:winexe -codepage:utf8 -optimize+ -sdk:4.5 -langversion:5 -nowarn:1591"
 
 command -v mcs >/dev/null 2>&1 || { echo "mcs が見つかりません (sudo apt install mono-devel)"; exit 1; }
