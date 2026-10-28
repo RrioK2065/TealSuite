@@ -738,7 +738,9 @@ public static class V1110Tests
             m.Pin(h, P.PinManager.HowHotkey, null);
             m.Dispose();
             Check(!IsTopmostNow(h), "終了するとき (Dispose) に固定を外す");
-            Check(P.Win32Windows.IsCaption(h, new Point(frame2.Left + frame2.Width / 2, frame2.Top + 8)) == true, "タイトルバーかどうか (WM_NCHITTEST = HTCAPTION)");
+            // 枠の上端 +8px は、この Windows ではリサイズ枠 (HTBORDER) になる。タイトルバーの中ほどを聞く。
+            int capY = frame2.Top + SystemInformation.FrameBorderSize.Height + SystemInformation.CaptionHeight / 2;
+            Check(P.Win32Windows.IsCaption(h, new Point(frame2.Left + frame2.Width / 2, capY)) == true, "タイトルバーかどうか (WM_NCHITTEST = HTCAPTION)");
             Check(P.Win32Windows.IsCaption(h, new Point(frame2.Left + frame2.Width / 2, frame2.Top + frame2.Height / 2)) == false, "ウィンドウの中はタイトルバーではない");
         }
         finally

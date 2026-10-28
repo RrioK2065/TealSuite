@@ -375,8 +375,16 @@ namespace TealSuite.Pin
             int slash = Math.Max(s.LastIndexOf('\\'), s.LastIndexOf('/'));
             if (slash >= 0) s = s.Substring(slash + 1);
             s = s.ToLowerInvariant();
-            if (!s.EndsWith("*") && Path.GetExtension(s).Length == 0) s += ".exe";
+            // Path.GetExtension は Windows で < > | などを Illegal characters in path にする。確認は Validate が返す。
+            if (!s.EndsWith("*") && ExtensionOf(s).Length == 0) s += ".exe";
             return s;
+        }
+
+        static string ExtensionOf(string s)
+        {
+            int dot = s.LastIndexOf('.');
+            if (dot <= 0 || dot == s.Length - 1) return "";
+            return s.Substring(dot);
         }
 
         /// <summary>* を使える比較 (大文字小文字は区別しない)</summary>
