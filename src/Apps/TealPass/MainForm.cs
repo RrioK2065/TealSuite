@@ -83,9 +83,10 @@ namespace TealSuite.Pass
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(280)));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            var gen = BuildGenerator(); gen.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var lst = BuildList(); lst.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var det = BuildDetail(); det.Margin = new Padding(0);
+            // TableLayoutPanel の中を Dock=Fill にすると、Windows のレイアウトが再入してスタックが溢れる
+            var gen = BuildGenerator(); gen.Dock = DockStyle.None; gen.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; gen.Margin = new Padding(0, 0, Theme.S(10), 0);
+            var lst = BuildList(); lst.Dock = DockStyle.None; lst.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; lst.Margin = new Padding(0, 0, Theme.S(10), 0);
+            var det = BuildDetail(); det.Dock = DockStyle.None; det.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; det.Margin = new Padding(0);
             grid.Controls.Add(gen, 0, 0); grid.Controls.Add(lst, 1, 0); grid.Controls.Add(det, 2, 0);
 
             Controls.Add(grid);
