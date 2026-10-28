@@ -112,6 +112,7 @@ jobs:
     needs: linux
     runs-on: windows-latest
     timeout-minutes: 45
+    # 手順ごとの制限。1 つのテストが止まってもジョブの 45 分までは使わない。
     env:
       GH_TOKEN: ${{ github.token }}
       VER: ${{ needs.linux.outputs.version }}
@@ -149,6 +150,7 @@ jobs:
 
       - name: ビルド (Windows の .NET Framework の csc)
         id: build
+        timeout-minutes: 8
         run: |
           .\build.ps1 -Out dist-win\TealSuite -Tests -TestsDir build-win
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -157,18 +159,21 @@ jobs:
 
       - name: テスト (csc でビルドしたもの)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 12
         run: |
           .\tests\run_tests.ps1 -Dist dist-win\TealSuite -TestsDir build-win -Log out\logs\tests-csc.log
           exit $LASTEXITCODE
 
       - name: テスト (配布する mono のビルド)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 12
         run: |
           .\tests\run_tests.ps1 -Dist shipped-tests\TealSuite -TestsDir build-mono -Log out\logs\tests-shipped.log
           exit $LASTEXITCODE
 
       - name: 起動のチェック (配布するもの)
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         run: |
           # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
           Start-Transcript -Path out\logs\smoke-shipped.log -Append | Out-Null
@@ -178,6 +183,7 @@ jobs:
 
       - name: 起動のチェック (csc でビルドしたもの)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 10
         run: |
           # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
           Start-Transcript -Path out\logs\smoke-csc.log -Append | Out-Null
@@ -187,6 +193,7 @@ jobs:
 
       - name: アップデートのチェック (前のリリースから)
         if: ${{ !cancelled() && env.PREV_TAG != '' }}
+        timeout-minutes: 8
         run: |
           New-Item -ItemType Directory -Force prev | Out-Null
           gh release download $env:PREV_TAG --repo $env:GITHUB_REPOSITORY --dir prev --pattern "TealSuite-[0-9]*.zip"
@@ -200,6 +207,7 @@ jobs:
 
       - name: アップデートのチェック (1.8.0 から。Teal Sub → Teal Wallet の引き継ぎ)
         if: ${{ !cancelled() }}
+        timeout-minutes: 8
         run: |
           New-Item -ItemType Directory -Force prev180 | Out-Null
           gh release download v1.8.0 --repo $env:GITHUB_REPOSITORY --dir prev180 --pattern "TealSuite-1.8.0.zip"

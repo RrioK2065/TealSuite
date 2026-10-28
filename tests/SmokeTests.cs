@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 static class SmokeTests
 {
@@ -80,11 +81,28 @@ static class SmokeTests
         return fail == 0 ? 0 : 1;
     }
 
+    const int SectionTimeoutMs = 120000;
+
     static void Run(string name, Action a)
     {
         Section(name);
+        Console.Out.Flush();
+        // 1 つの節が Win32 呼び出しで止まっても、ジョブの制限時間まで待たない
+        var done = new ManualResetEvent(false);
+        var watch = new Thread(() =>
+        {
+            if (!done.WaitOne(SectionTimeoutMs))
+            {
+                Console.WriteLine("  FAIL " + name + " : timed out after " + (SectionTimeoutMs / 1000) + " seconds");
+                Console.Out.Flush();
+                Environment.Exit(2);
+            }
+        });
+        watch.IsBackground = true;
+        watch.Start();
         try { a(); }
         catch (Exception ex) { Check(false, "例外: " + ex); }
+        finally { done.Set(); watch.Join(2000); done.Close(); }
     }
 
     // ---------- Teal Pass ----------

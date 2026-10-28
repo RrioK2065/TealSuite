@@ -166,8 +166,8 @@ if ($mode -eq "gui") {
     foreach ($name in @("TealHub", "TealMemo")) {
         $r = $running | Where-Object { $_.ProcessName -eq $name } | Select-Object -First 1
         if ($r) {
-            $fv = $null; try { $fv = $r.MainModule.FileVersionInfo.FileVersion } catch { }
-            Write-Ok "$label : $name はアップデートのあとに起動し直された (ファイルのバージョン $fv)"
+            # Process.MainModule can block for a long time on some processes; the check only needs the name.
+            Write-Ok "$label : $name はアップデートのあとに起動し直された (pid $($r.Id))"
         } else { Write-Warn "$label : $name が起動し直されていません" }
     }
     foreach ($p in $before) { if (-not $p.HasExited) { Write-Warn "$label : 前の版の $($p.ProcessName) ($($p.Id)) が閉じられずに残っています" } }
