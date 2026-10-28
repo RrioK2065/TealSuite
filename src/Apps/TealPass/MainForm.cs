@@ -112,7 +112,7 @@ namespace TealSuite.Pass
             uiTimer.Tick += (s, e) => UpdateFooter();
             clip.Cleared += () => { lastAction = "クリップボードを消去しました"; UpdateFooter(); };
             KeyDown += OnKey;
-            Load += (s, e) => { LoadVault(); Regenerate(); uiTimer.Start(); };
+            Load += (s, e) => { Boot("Load"); LoadVault(); Boot("vault"); Regenerate(); Boot("generated"); uiTimer.Start(); };
             FormClosing += (s, e) => SaveSettings();
             FormClosed += (s, e) => clip.Dispose();   // 常駐中に隠すだけのときは、コピーの自動消去を続ける
             Boot("MainForm done");
@@ -168,6 +168,7 @@ namespace TealSuite.Pass
             return card;
         }
         bool built;
+        bool updatingFilter;
 
         public PasswordOptions CurrentOptions()
         {
@@ -212,7 +213,7 @@ namespace TealSuite.Pass
             listCard.Controls.Add(new InputFrame(search) { Dock = DockStyle.Top });
             listCard.Controls.Add(Ui.Spacer(6));
             FilterBox.Dock = DockStyle.Top;
-            FilterBox.SelectedIndexChanged += (s, e) => RefreshList(null);
+            FilterBox.SelectedIndexChanged += (s, e) => { if (!updatingFilter) RefreshList(null); };
             listCard.Controls.Add(FilterBox);
             return listCard;
         }
@@ -504,7 +505,10 @@ namespace TealSuite.Pass
             bool same = true;
             for (int i = 0; i < 3; i++) if ((string)FilterBox.Items[i] != labels[i]) same = false;
             if (same) return;
-            for (int i = 0; i < 3; i++) FilterBox.Items[i] = labels[i];
+            // Windows では Items の書き換えが SelectedIndexChanged を起こし、RefreshList に戻ってスタックが溢れる
+            updatingFilter = true;
+            try { for (int i = 0; i < 3; i++) FilterBox.Items[i] = labels[i]; }
+            finally { updatingFilter = false; }
         }
 
         public void ToggleFavorite()
