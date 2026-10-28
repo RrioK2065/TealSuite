@@ -65,7 +65,11 @@ namespace TealSuite.Common
             if (atLogin && resident) return;   // 通知領域で静かに待つ
             // ログイン時 (常駐オフ) は最小化で起動 (WindowMemory が位置を復元した後に最小化する)
             if (atLogin) window.Load += (s, e) => window.WindowState = FormWindowState.Minimized;
+            if (Environment.GetEnvironmentVariable("TEALSUITE_BOOTLOG") == "1")
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tealsuite-boot.log"), DateTime.Now.ToString("HH:mm:ss.fff") + " before Show\r\n"); } catch { }
             window.Show();
+            if (Environment.GetEnvironmentVariable("TEALSUITE_BOOTLOG") == "1")
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tealsuite-boot.log"), DateTime.Now.ToString("HH:mm:ss.fff") + " after Show\r\n"); } catch { }
         }
 
         bool ReadResident()

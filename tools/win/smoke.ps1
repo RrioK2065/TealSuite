@@ -38,6 +38,8 @@ foreach ($t in $targets) {
     Stop-Suite $Suite
     $root = Join-Path $work $id
     Set-IsolatedEnv $root
+    $env:TEALSUITE_BOOTLOG = "1"
+    Remove-Item (Join-Path ([System.IO.Path]::GetTempPath()) "tealsuite-boot.log") -ErrorAction SilentlyContinue
     $failBefore = $script:Failures
     try {
         if ($t.args) { $p = Start-Process -FilePath $exe -ArgumentList $t.args -PassThru } else { $p = Start-Process -FilePath $exe -PassThru }
@@ -51,7 +53,11 @@ foreach ($t in $targets) {
             $main = $wins | Where-Object { $_.Class -ne "#32770" -and $_.Title } | Select-Object -First 1
             if ($main -or ($wins | Where-Object { $_.Class -eq "#32770" })) { break }
         }
-        if ($p.HasExited) { Write-Bad "$id : 起動してすぐに終了しました (終了コード $($p.ExitCode))"; [void](Test-ErrorLogs $root $id); continue }
+        if ($p.HasExited) {
+            $boot = Join-Path ([System.IO.Path]::GetTempPath()) "tealsuite-boot.log"
+            if (Test-Path $boot) { Write-Host "  --- boot"; Write-Host (Get-Content -Raw -Encoding UTF8 $boot) }
+            Write-Bad "$id : 起動してすぐに終了しました (終了コード $($p.ExitCode))"; [void](Test-ErrorLogs $root $id); continue
+        }
         Start-Sleep -Seconds $Settle
         $wins = Get-VisibleWindows $p.Id
         foreach ($w in $wins) { Write-Host ("  window [{0}] '{1}' {2}x{3}" -f $w.Class, $w.Title, $w.Width, $w.Height) }

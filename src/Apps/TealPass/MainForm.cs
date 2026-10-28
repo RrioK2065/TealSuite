@@ -56,8 +56,16 @@ namespace TealSuite.Pass
 
         public VaultFile Vault { get { return vault; } }
 
+        static void Boot(string stage)
+        {
+            if (Environment.GetEnvironmentVariable("TEALSUITE_BOOTLOG") != "1") return;
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tealsuite-boot.log"), DateTime.Now.ToString("HH:mm:ss.fff") + " " + stage + "\r\n"); }
+            catch { }
+        }
+
         public MainForm()
         {
+            Boot("MainForm");
             Theme.ApplyForm(this);
             Text = AppInfo.WindowTitle;
             MinimumSize = Theme.S(960, 600);
@@ -78,18 +86,24 @@ namespace TealSuite.Pass
             moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
             btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
 
-            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = Theme.P(Theme.Pad), BackColor = Theme.Background };
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(340)));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(280)));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            // TableLayoutPanel の中を Dock=Fill にすると、Windows のレイアウトが再入してスタックが溢れる
-            var gen = BuildGenerator(); gen.Dock = DockStyle.None; gen.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; gen.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var lst = BuildList(); lst.Dock = DockStyle.None; lst.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; lst.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var det = BuildDetail(); det.Dock = DockStyle.None; det.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right; det.Margin = new Padding(0);
-            grid.Controls.Add(gen, 0, 0); grid.Controls.Add(lst, 1, 0); grid.Controls.Add(det, 2, 0);
+            // TableLayoutPanel は子の希望幅と列幅がぶつかると、Windows ではレイアウトが再入してスタックが溢れる。
+            // 左から 生成 | 一覧 | 詳細。後から Add したものから順に端へ付く。
+            var grid = new Panel { Dock = DockStyle.Fill, Padding = Theme.P(Theme.Pad), BackColor = Theme.Background };
+            var gen = BuildGenerator(); gen.Dock = DockStyle.Left; gen.Width = Theme.S(340);
+            var gap1 = new Panel { Dock = DockStyle.Left, Width = Theme.S(10), BackColor = Theme.Background };
+            var lst = BuildList(); lst.Dock = DockStyle.Left; lst.Width = Theme.S(280);
+            var gap2 = new Panel { Dock = DockStyle.Left, Width = Theme.S(10), BackColor = Theme.Background };
+            var det = BuildDetail(); det.Dock = DockStyle.Fill;
+            Boot("grid built");
+            grid.Controls.Add(det);
+            grid.Controls.Add(gap2);
+            grid.Controls.Add(lst);
+            grid.Controls.Add(gap1);
+            grid.Controls.Add(gen);
+            Boot("grid added");
 
             Controls.Add(grid);
+            Boot("controls added");
             Controls.Add(footer);
             Controls.Add(header);
 
@@ -101,6 +115,7 @@ namespace TealSuite.Pass
             Load += (s, e) => { LoadVault(); Regenerate(); uiTimer.Start(); };
             FormClosing += (s, e) => SaveSettings();
             FormClosed += (s, e) => clip.Dispose();   // 常駐中に隠すだけのときは、コピーの自動消去を続ける
+            Boot("MainForm done");
         }
 
         // ================= 生成 =================
