@@ -1,8 +1,11 @@
 // TealSuite 共通: 設定・データの保存 (JSON / 原子的な書き込み) と旧データの引き継ぎ
 // 保存先: %APPDATA%\TealSuite\<AppId>\   (環境変数 TEALSUITE_DATA_DIR で上書き可。テスト用)
 // 1.0 (AppSuite) のデータ %APPDATA%\AppSuite\<旧ID>\ は初回起動時にコピーして引き継ぐ (元は消さない)
+// 1.9.0: スイートの中での改名 (%APPDATA%\TealSuite\TealSub\ → TealWallet\) も同じ仕組みで引き継ぐ
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
 
@@ -48,9 +51,17 @@ namespace TealSuite.Common
         {
             var ids = AppInfo.LegacyIds;
             if (ids == null || ids.Length == 0 || HasFiles(AppDir)) return null;
+            // 1.9.0: 同じスイートの中での改名 (Teal Sub → Teal Wallet) は %APPDATA%\TealSuite\<旧ID>\、
+            //        それ以外は 1.0 (AppSuite) の %APPDATA%\AppSuite\<旧ID>\ を探す
+            var sources = new List<string>();
             foreach (var oldId in ids)
+                foreach (var r in new[] { Root, LegacyRoot })
+                {
+                    var p = Path.Combine(r, oldId);
+                    if (!sources.Any(x => SameDir(x, p))) sources.Add(p);
+                }
+            foreach (var src in sources)
             {
-                string src = Path.Combine(LegacyRoot, oldId);
                 if (string.Equals(Path.GetFullPath(src).TrimEnd('\\', '/'), Path.GetFullPath(AppDir).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)) continue;
                 if (!HasFiles(src)) continue;
                 string tmp = AppDir + ".migrating";
@@ -75,6 +86,12 @@ namespace TealSuite.Common
                 }
             }
             return null;
+        }
+
+        static bool SameDir(string a, string b)
+        {
+            try { return string.Equals(Path.GetFullPath(a).TrimEnd('\\', '/'), Path.GetFullPath(b).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
         }
 
         static void CopyDir(string src, string dst)

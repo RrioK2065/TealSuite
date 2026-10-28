@@ -1,11 +1,11 @@
-// Teal Sub (サブスク整理) - ダイアログ: 追加・編集 / 解約ガイド / 設定
+// Teal Wallet (サブスク＆買い物リスト) - ダイアログ: 追加・編集 / 解約ガイド / 設定
 using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using TealSuite.Common;
 
-namespace TealSuite.Sub
+namespace TealSuite.Wallet
 {
     /// <summary>サブスクの追加・編集</summary>
     public class SubEditForm : Form
@@ -215,13 +215,14 @@ namespace TealSuite.Sub
         }
     }
 
-    /// <summary>Teal Sub の設定 (お知らせ) とデータの書き出し</summary>
+    /// <summary>Teal Wallet の設定 (お知らせ) とデータの書き出し</summary>
     public class SubSettingsForm : Form
     {
         public readonly ToggleSwitch swRemind = new ToggleSwitch("更新日・無料期間の終わりをお知らせする");
         public readonly NumericUpDown numDays = new NumericUpDown();
         public readonly NumericUpDown numBudget = new NumericUpDown();
-        public SubSettingsForm(SubSettings st, bool resident, Action exportCsv, Action backup, Action restore, Action importCsv = null)
+        public readonly NumericUpDown numShopBudget = new NumericUpDown();
+        public SubSettingsForm(SubSettings st, bool resident, Action exportCsv, Action backup, Action restore, Action importCsv = null, ShopSettings shop = null)
         {
             DialogKit.Setup(this, AppInfo.TitleFor("設定"));
             var grid = new FormGrid(1, 460);
@@ -232,7 +233,7 @@ namespace TealSuite.Sub
             grid.Add("いつからお知らせするか", FormGrid.Inline(numDays, unit));
             var note = new WrapLabel
             {
-                Text = "お知らせは、Teal Sub が起動している間だけ出ます (画面右下の通知)。\n" +
+                Text = "お知らせは、Teal Wallet が起動している間だけ出ます (画面右下の通知)。\n" +
                        (resident ? "いまは常駐オンなので、×で閉じても通知領域に残ってお知らせします。パソコンを起動したときから働かせるには、Teal Hub の設定で「スタートアップ」をオンにしてください。"
                                  : "いまは常駐オフなので、閉じている間はお知らせできません。Teal Hub の設定で「常駐」をオンにしてください。"),
                 Font = Theme.Small, ForeColor = resident ? Theme.SubText : Theme.Warning
@@ -248,13 +249,22 @@ namespace TealSuite.Sub
             var yen = new Label { Text = "円 / 月 (0 = 使わない)", AutoSize = true, UseMnemonic = false, Padding = new Padding(0, Theme.S(4), 0, 0) };
             grid.Add("サブスクに使ってよい金額 (月あたり)", FormGrid.Inline(numBudget, yen));
             grid.Add(null, new WrapLabel { Text = "ダッシュボードと支払い予定に、予算まであといくらか (超えていないか) を出します。", Font = Theme.Small, ForeColor = Theme.SubText });
+            if (shop != null)
+            {
+                numShopBudget.Minimum = 0; numShopBudget.Maximum = 10000000; numShopBudget.Increment = 1000; numShopBudget.ThousandsSeparator = true;
+                numShopBudget.Width = Theme.S(120); numShopBudget.Font = Theme.Body; numShopBudget.TextAlign = HorizontalAlignment.Right;
+                var yen2 = new Label { Text = "円 / 月 (0 = 使わない)", AutoSize = true, UseMnemonic = false, Padding = new Padding(0, Theme.S(4), 0, 0) };
+                grid.Add("買い物に使ってよい金額 (1 か月)", FormGrid.Inline(numShopBudget, yen2));
+                grid.Add(null, new WrapLabel { Text = "買い物リストで「買い物を終える」と記録した金額を月ごとに合計し、ダッシュボードと買い物リストに予算の残りを出します。", Font = Theme.Small, ForeColor = Theme.SubText });
+                numShopBudget.Value = Math.Max(0, Math.Min(numShopBudget.Maximum, shop.MonthlyBudget));
+            }
 
             grid.Add(null, new WrapLabel { Text = "データ", Font = Theme.Title });
             var csvIn = new FlatButton("CSV から読み込む…", ButtonKind.Secondary).FitWidth(100);
             csvIn.Visible = importCsv != null;
             csvIn.Click += (s, e) => importCsv();
             var csv = new FlatButton("CSV に書き出す…", ButtonKind.Secondary).FitWidth(100);
-            var bak = new FlatButton("バックアップ (JSON)…", ButtonKind.Secondary).FitWidth(100);
+            var bak = new FlatButton(shop != null ? "バックアップ (JSON。買い物リストも)…" : "バックアップ (JSON)…", ButtonKind.Secondary).FitWidth(100);
             var res = new FlatButton("バックアップから戻す…", ButtonKind.Secondary).FitWidth(100);
             csv.Click += (s, e) => exportCsv(); bak.Click += (s, e) => backup(); res.Click += (s, e) => restore();
             grid.AddRaw(FormGrid.Inline(csv, csvIn), 1);
@@ -263,7 +273,7 @@ namespace TealSuite.Sub
 
             var ok = new FlatButton("OK", ButtonKind.Primary).FitWidth(88);
             var cancel = new FlatButton("キャンセル", ButtonKind.Secondary).FitWidth(88);
-            ok.Click += (s, e) => { st.Remind = swRemind.Checked; st.RemindDays = (int)numDays.Value; st.MonthlyBudget = (long)numBudget.Value; DialogResult = DialogResult.OK; };
+            ok.Click += (s, e) => { st.Remind = swRemind.Checked; st.RemindDays = (int)numDays.Value; st.MonthlyBudget = (long)numBudget.Value; if (shop != null) shop.MonthlyBudget = (long)numShopBudget.Value; DialogResult = DialogResult.OK; };
             cancel.DialogResult = DialogResult.Cancel; CancelButton = cancel;
             grid.AddRaw(DialogKit.Buttons(ok, cancel), 1);
             Controls.Add(grid);

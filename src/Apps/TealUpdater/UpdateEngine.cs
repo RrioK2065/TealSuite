@@ -292,7 +292,7 @@ namespace TealSuite.Updater
                     if (!Directory.Exists(dir)) { createdDirs.Add(dir); Directory.CreateDirectory(dir); }
                     CopyWithRetry(Path.Combine(StagingDir, f.Path.Replace('/', Path.DirectorySeparatorChar)), dst);
                 }
-                foreach (var d in info.Deleted) DeleteWithRetry(Target(d));
+                foreach (var d in info.Deleted) { DeleteWithRetry(Target(d)); TryDeleteEmptyDirs(Path.GetDirectoryName(Target(d))); }   // 空になったフォルダ (1.9.0: apps/TealSub) も消す
                 Report(92, "アプリの一覧 (apps.json) を更新しています…");
                 var merged = MergeAppsJson(inst.AppsJson, pkg);
                 WriteAtomic(Path.Combine(Dir, AppsJsonName), Json.Write(merged));

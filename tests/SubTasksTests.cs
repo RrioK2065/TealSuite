@@ -1,10 +1,10 @@
-// Teal Sub (サブスク整理) と Teal Tasks (タスク管理＆カレンダー) のロジックテスト
+// Teal Wallet (サブスク＆買い物リスト) と Teal Tasks (タスク管理＆カレンダー) のロジックテスト
 extern alias SUB;
 extern alias TASKS;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using S = SUB::TealSuite.Sub;
+using S = SUB::TealSuite.Wallet;
 using T = TASKS::TealSuite.Tasks;
 
 static class SubTasksTests
@@ -18,10 +18,10 @@ static class SubTasksTests
         return s;
     }
 
-    // ---------------------------------------------------------------- Teal Sub
+    // ---------------------------------------------------------------- Teal Wallet (サブスク)
     public static void RunSub(Action<bool, string> Check)
     {
-        SUB::TealSuite.Common.AppInfo.Init("TealSub", "Teal Sub", "");
+        SUB::TealSuite.Common.AppInfo.Init("TealWallet", "Teal Wallet", "");
         var today = D(2026, 10, 27);
         // 更新日
         var m = Sub("月払い", 1000, S.Cycle.Monthly, D(2026, 1, 15));
@@ -237,20 +237,22 @@ static class SubTasksTests
         }
         using (var s = new S.MainForm())
         {
-            SUB::TealSuite.Common.AppInfo.Init("TealSub", "Teal Sub", "");
+            SUB::TealSuite.Common.AppInfo.Init("TealWallet", "Teal Wallet", "");
             s.Data = new S.SubData();
             s.InsertSamples();
-            Check(s.Data.Subs.Count >= 8 && s.List.Items.Count > 0, "Teal Sub: 見本データを入れて一覧に表示");
+            Check(s.Data.Subs.Count >= 8 && s.List.Items.Count > 0, "Teal Wallet: 見本データを入れて一覧に表示");
         }
     }
 
     public static void Seed(string dir)
     {
-        SUB::TealSuite.Common.AppInfo.Init("TealSub", "Teal Sub", "");
+        SUB::TealSuite.Common.AppInfo.Init("TealWallet", "Teal Wallet", "");
         var sd = new S.SubData();
         sd.Subs.AddRange(S.SubLogic.SampleData(DateTime.Today));
         sd.Settings.MonthlyBudget = 18000; // 1.8.0: 月の予算 (支払い予定の画面に出る)
         SUB::TealSuite.Common.DataStore.Save(S.SubData.FileName, sd);
+        // 1.9.0: 買い物リスト・欲しいもの (月の予算 40,000 円)
+        SUB::TealSuite.Common.DataStore.Save(S.ShopData.FileName, S.ShopLogic.Sample(DateTime.Today));
         TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
         var td = new T.TaskData();
         td.Tasks.AddRange(T.TaskLogic.SampleData(DateTime.Now));

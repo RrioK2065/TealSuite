@@ -1,4 +1,4 @@
-// TealSuite 共通: 画面づくりの小物 (1.7.0 から。Teal Sub・Teal Tasks で使う)
+// TealSuite 共通: 画面づくりの小物 (1.7.0 から。Teal Wallet・Teal Tasks で使う)
 //  - Lay        … Dock=Top で上から順に積む・入力欄 + ボタンの 1 行・小見出し
 //  - SegmentTabs … 画面の切り替えタブ (キーボードの ←→ / Ctrl+1〜9 でも切り替え)
 //  - Fmt        … 金額・日付・時間の日本語表記
@@ -439,6 +439,19 @@ namespace TealSuite.Common
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
         }
         public object Selected { get { return SelectedItem; } }
+        /// <summary>
+        /// 表示されたとき・大きさが変わったとき: 選んでいる行が一番上から見える範囲にあれば一番上から見せる
+        /// (mono などで、先に選んだ行まで勝手に送られて先頭の行が隠れることがあるため)
+        /// </summary>
+        void ShowFromTop()
+        {
+            if (!IsHandleCreated || Items.Count == 0 || TopIndex == 0 || ItemHeight <= 0) return;
+            int last = Math.Max(SelectedIndex, 0);
+            if ((last + 1) * ItemHeight <= ClientSize.Height) try { TopIndex = 0; } catch { }
+        }
+        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); ShowFromTop(); }
+        protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (Visible) ShowFromTop(); }
+        protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); ShowFromTop(); }
         public void SetItems(System.Collections.IEnumerable list, Func<object, bool> keepSelected = null)
         {
             object keep = SelectedItem;

@@ -82,6 +82,7 @@ namespace TealSuite.Common
             {
                 // 二重起動でないと確定してから旧データを引き継ぐ (フォームがデータを読む前)
                 try { MigratedFrom = DataStore.MigrateLegacyData(); } catch { }
+                try { RenameMigration.RunForSelf(); } catch { }   // 1.9.0: 改名したアプリのスタートアップの登録を直す
                 try { if (AppInfo.IsWindows) Native.SetProcessDPIAware(); } catch { }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);

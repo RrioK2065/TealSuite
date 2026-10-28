@@ -16,7 +16,7 @@ using Pp = PM::TealSuite.Pass;
 using Cc = CH::TealSuite.Clip;
 using V = VM::TealSuite.Volume;
 using H = AM::TealSuite.Hub;
-using S = SUB::TealSuite.Sub;
+using S = SUB::TealSuite.Wallet;
 using T = TASKS::TealSuite.Tasks;
 
 static class V180Tests
@@ -196,7 +196,7 @@ static class V180Tests
     // ---------------------------------------------------------------- サブスク
     public static void RunSub(Action<bool, string> Check)
     {
-        SUB::TealSuite.Common.AppInfo.Init("TealSub", "Teal Sub", "");
+        SUB::TealSuite.Common.AppInfo.Init("TealWallet", "Teal Wallet", "");
         var today = D(2026, 10, 28);
         var a = new S.Subscription { Name = "動画", Amount = 1490, Category = "動画", Payment = "カード A" };
         a.Cycle = S.Cycle.Monthly; a.StartDate = D(2025, 1, 5);

@@ -1,4 +1,4 @@
-// Teal Sub (サブスク整理) - 1.8.0 の追加: 料金の変更履歴・月の予算・これから 12 か月の支払い予定・CSV の読み込み
+// Teal Wallet (サブスク＆買い物リスト) - 1.8.0 の追加: 料金の変更履歴・月の予算・これから 12 か月の支払い予定・CSV の読み込み
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -8,7 +8,7 @@ using System.Runtime.Serialization;
 using System.Windows.Forms;
 using TealSuite.Common;
 
-namespace TealSuite.Sub
+namespace TealSuite.Wallet
 {
     /// <summary>料金の変更 1 回分 (編集で金額を変えたときに記録)</summary>
     [DataContract]
@@ -205,7 +205,7 @@ namespace TealSuite.Sub
                 cCancelled = TextKit.Column(h, "解約日", "cancelledon"),
                 cUrl = TextKit.Column(h, "解約ページ", "url"),
                 cMemo = TextKit.Column(h, "メモ", "memo", "note");
-            if (cName < 0 || cAmount < 0) { r.Error = "サブスクの CSV として読めませんでした。\n1 行目に「名前」と「金額」の見出しが必要です (Teal Sub で書き出した CSV はそのまま読めます)。"; return r; }
+            if (cName < 0 || cAmount < 0) { r.Error = "サブスクの CSV として読めませんでした。\n1 行目に「名前」と「金額」の見出しが必要です (Teal Wallet・Teal Sub で書き出した CSV はそのまま読めます)。"; return r; }
             var seen = new HashSet<string>(existing.Select(Key));
             for (int i = 1; i < rows.Count; i++)
             {

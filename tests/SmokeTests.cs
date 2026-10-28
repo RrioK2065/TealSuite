@@ -53,17 +53,22 @@ static class SmokeTests
         Run("アップデート: TealUpdater の画面", () => UpdaterTests.RunForm(Check, tmp));
         Run("オンライン アップデート: バージョン・リリース・sha256・接続先・ダウンロード", () => OnlineUpdateTests.RunLogic(Check, tmp, dist));
         Run("オンライン アップデート: お知らせ・ボタン・メニュー・TealUpdater へ", () => OnlineUpdateTests.RunUi(Check, tmp, dist));
-        Run("Teal Sub: 更新日・合計・見直し候補・お知らせ", () => SubTasksTests.RunSub(Check));
+        Run("Teal Wallet (サブスク): 更新日・合計・見直し候補・お知らせ", () => SubTasksTests.RunSub(Check));
         Run("Teal Tasks: ひとこと入力・優先度・くり返し・お知らせ・統計", () => SubTasksTests.RunTasks(Check));
-        Run("Teal Tasks / Teal Sub: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
+        Run("Teal Tasks / Teal Wallet: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
         Run("1.8.0 Teal Memo: ピン留め・タグ・ゴミ箱・読み込み (文字コード・CSV)", () => V180Tests.RunMemo(Check));
         Run("1.8.0 Teal Pass: 変更履歴・パスワードの点検・CSV", () => V180Tests.RunPass(Check));
         Run("1.8.0 Teal Clip: 履歴の数・自動削除・定型文・検索・除外", () => V180Tests.RunClip(Check));
         Run("1.8.0 Teal Volume: プリセット・すべてミュート・固定と非表示", () => V180Tests.RunVolume(Check));
         Run("1.8.0 Teal Hub: バックアップと復元・更新内容", () => V180Tests.RunHub(Check, tmp));
-        Run("1.8.0 Teal Sub: 値上げの記録・予算・支払い予定・CSV 読み込み", () => V180Tests.RunSub(Check));
+        Run("1.8.0 Teal Wallet (サブスク): 値上げの記録・予算・支払い予定・CSV 読み込み", () => V180Tests.RunSub(Check));
         Run("1.8.0 Teal Tasks: 平日・毎年・テンプレート・まとめて追加・整理", () => V180Tests.RunTasks(Check));
         Run("1.8.0 Teal Tasks: 画面 (その他メニュー)", () => V180Tests.RunTasksUi(Check));
+        Run("1.9.0 Teal Wallet 買い物リスト: ひとこと入力の読み取り", () => V190Tests.RunParse(Check));
+        Run("1.9.0 Teal Wallet 買い物リスト: 売り場・合計・買い物を終える・よく買うもの・欲しいもの", () => V190Tests.RunShop(Check));
+        Run("1.9.0 Teal Wallet 買い物リスト: 画面", () => V190Tests.RunShopUi(Check));
+        Run("1.9.0 Teal Sub → Teal Wallet: データ・設定・スタートアップ・バックアップの引き継ぎ", () => V190Tests.RunRename(Check, tmp));
+        Run("1.9.0 アップデート: apps.json の付け替え・TealSub.exe の削除", () => V190Tests.RunUpdate(Check, dist));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
@@ -154,11 +159,11 @@ static class SmokeTests
         Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.8.0"), "バージョン 1.8.0");
+        Check(apps.All(a => a.Version == "1.9.0"), "バージョン 1.9.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
-        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealSub", null }, { "TealTasks", null } };
+        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealWallet", "TealSub" }, { "TealTasks", null } };
         var all = AM::TealSuite.Hub.Manifest.Load(path, true);
         Check(all.Count == 7 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 7 件 (Teal Hub を含む)");
         foreach (var a in all)

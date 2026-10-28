@@ -85,7 +85,17 @@ namespace TealSuite.Common
             catch (Exception ex) { DataStore.Log("save app-settings: " + ex); return "設定を保存できませんでした: " + ex.Message; }
         }
 
-        public static AppPref Get(string appId) { return Load().Find(appId); }
+        /// <summary>
+        /// そのアプリの設定。1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet) は、Teal Hub が付け替えるまで旧 ID の項目を読む
+        /// </summary>
+        public static AppPref Get(string appId)
+        {
+            var f = Load();
+            var p = f.Find(appId);
+            if (p == null && AppInfo.LegacyIds != null && string.Equals(appId, AppInfo.Id, StringComparison.OrdinalIgnoreCase))
+                p = AppInfo.LegacyIds.Select(f.Find).FirstOrDefault(x => x != null);
+            return p;
+        }
 
         /// <summary>常駐するか (Teal Hub で決めていなければ fallback)</summary>
         public static bool IsResident(string appId, bool fallback)

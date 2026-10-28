@@ -1,4 +1,4 @@
-// Teal Sub (サブスク整理) - 計算 (画面なし。tests/SubTasksTests.cs で確かめる)
+// Teal Wallet (サブスク＆買い物リスト) - 計算 (画面なし。tests/SubTasksTests.cs で確かめる)
 //  - 次の更新日 / 月額・年額への換算 / 合計 / カテゴリ別
 //  - 見直し候補 (決まったルールで点数をつける。AI やネットは使わない)
 //  - お知らせ (更新日・無料期間の終わりの N 日前) / CSV / 見本データ
@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using TealSuite.Common;
 
-namespace TealSuite.Sub
+namespace TealSuite.Wallet
 {
     public class ReviewItem
     {

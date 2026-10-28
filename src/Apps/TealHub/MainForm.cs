@@ -422,6 +422,10 @@ namespace TealSuite.Hub
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        /// <summary>前回の LoadManifest で改名の引き継ぎをしたときの文 (なければ null)</summary>
+        public string RenameNotice { get; private set; }
+        string renamedAppId, renamedText;
+
         public void LoadManifest()
         {
             loaded = true;
@@ -432,6 +436,18 @@ namespace TealSuite.Hub
             try { allApps = Manifest.Load(path, true); apps = allApps.Where(a => !IsSelf(a)).ToList(); }
             catch (FileNotFoundException) { allApps = new List<AppEntry>(); apps = new List<AppEntry>(); error = "apps.json が見つかりません。\n" + path; }
             catch (Exception ex) { allApps = new List<AppEntry>(); apps = new List<AppEntry>(); error = "apps.json を読み込めませんでした。\n" + ex.Message; DataStore.Log("manifest: " + ex); }
+            // 1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet) のショートカット・常駐・スタートアップを引き継ぐ (ショートカットを読む前に)
+            var renamed = HubMigration.Run(allApps);
+            if (renamed.Count > 0)
+            {
+                RenameNotice = HubMigration.Notice(renamed);
+                // 名前が変わったアプリ (上のお知らせの「開く」ボタン用)
+                var newName = renamed[0].Substring(renamed[0].IndexOf(" → ", StringComparison.Ordinal) + 3);
+                var ra = allApps.FirstOrDefault(x => x.Name == newName);
+                renamedAppId = ra != null ? ra.Id : null;
+                renamedText = string.Join("、", renamed.Select(r => r.Replace(" → ", " は ") + " になりました")) + "。データ・ショートカット・常駐・スタートアップの設定はそのまま引き継いでいます。";
+                noticesKey = null;
+            }
 
             listPanel.SuspendLayout();
             foreach (var c in cards) c.Dispose();
@@ -462,6 +478,17 @@ namespace TealSuite.Hub
             else ShowList();
             RefreshStatus();
             if (shortcuts.Migrated) footer.StatusText = "1.5 までのショートカットの設定を引き継ぎました";
+            if (RenameNotice != null) footer.StatusText = RenameNotice;
+        }
+
+        /// <summary>1.9.0: 名前が変わったアプリ (旧ID → 新ID)。apps.json の legacyIds から</summary>
+        public Dictionary<string, string> Renames()
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var a in allApps ?? new List<AppEntry>())
+                if (a.LegacyIds != null)
+                    foreach (var o in a.LegacyIds.Where(RenameMigration.OldNames.ContainsKey)) d[o] = a.Id;
+            return d;
         }
 
         static bool IsSelf(AppEntry a) { return a.Self || a.Id.Equals(Program.Id, StringComparison.OrdinalIgnoreCase); }
@@ -672,6 +699,13 @@ namespace TealSuite.Hub
                 list.Add(Tuple.Create("self", "Teal Hub のスタートアップの登録先が違います。\n登録先: " + selfState.RegisteredPath, "この場所で登録し直す", (Action)(() => SetSelfStartup(true))));
             else if (!selfState.Registered && AnyAppStartupOn && !dismissed.Contains("selfoff"))
                 list.Add(Tuple.Create("selfoff", "Teal Hub のスタートアップがオフです。Windows の起動後、Teal Hub を開くまでショートカットは使えません。", "Teal Hub も登録する", (Action)(() => SetSelfStartup(true))));
+            // 1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet) のお知らせ (閉じるまで出す。次に起動したときは出ない)
+            if (renamedText != null && !dismissed.Contains("rename"))
+            {
+                var rid = renamedAppId;
+                var rapp = rid != null ? FindApp(rid) : null;
+                list.Add(Tuple.Create("rename", renamedText, rapp != null ? rapp.Name + " を開く" : "閉じる", (Action)(() => { dismissed.Add("rename"); noticesKey = null; if (rid != null) OpenApp(rid); UpdateNotices(); })));
+            }
             foreach (var g in legacy.GroupBy(x => x.AppId))
             {
                 var app = FindApp(g.Key);
@@ -693,7 +727,7 @@ namespace TealSuite.Hub
             {
                 var item = t;
                 bool isUpdate = item.Item1.StartsWith("update|"), isNew = item.Item1.StartsWith("whatsnew|");
-                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || item.Item1 == "selfoff" || isNew || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate || isNew);
+                var bar = new NoticeBar(item.Item2, item.Item3, item.Item1.StartsWith("legacy") || item.Item1 == "selfoff" || item.Item1 == "rename" || isNew || (isUpdate && !updates.Downloading), isUpdate ? "内容を見る" : null, isUpdate || isNew);
                 if (isNew && bar.Dismiss != null) { bar.Dismiss.Text = "閉じる"; bar.Dismiss.Click += (s, e) => MarkWhatsNewSeen(); }
                 if (isUpdate)
                 {
@@ -940,10 +974,12 @@ namespace TealSuite.Hub
             var info = HubBackup.Inspect(path);
             if (!info.Valid) { Dialogs.Warn(this, "このファイルからは復元できません。\n\n" + info.Error); return -1; }
             RefreshStatus();
+            var folderMap = HubBackup.FolderMap(info, Renames());
             var running = cards.Where(c => c.Pids.Count > 0).ToList();
             var msg = "このバックアップでデータを上書きしますか?\n\n"
                 + "作成日時: " + (info.Created == DateTime.MinValue ? "不明" : info.Created.ToString("yyyy/MM/dd HH:mm")) + " ・ バージョン " + (info.Version ?? "不明") + "\n"
-                + "中身: " + info.FileCount + " 個のファイル (" + string.Join("、", info.Apps) + ")\n\n"
+                + "中身: " + info.FileCount + " 個のファイル (" + string.Join("、", info.Apps.Select(x => folderMap.ContainsKey(x) ? x + " → " + folderMap[x] : x)) + ")\n\n"
+                + (folderMap.Count > 0 ? "・名前が変わる前のアプリのデータ (" + string.Join("、", folderMap.Keys.Select(RenameMigration.OldName)) + ") は、新しい名前のアプリに戻します。\n" : "")
                 + "・今のデータは、復元の前に自動で残します (Teal Hub のデータ フォルダーの backups)。\n"
                 + (running.Count > 0 ? "・実行中のアプリ (" + string.Join("、", running.Select(c => c.App.Name)) + ") は終了します。\n" : "")
                 + (info.HasProtected ? "・Teal Pass の保管庫と Teal Clip の履歴は、バックアップしたときと同じ Windows ユーザーでないと開けません。\n" : "");
@@ -954,7 +990,7 @@ namespace TealSuite.Hub
             {
                 Cursor = Cursors.WaitCursor;
                 var now = DateTime.Now;
-                int n = HubBackup.Restore(path, DataStore.Root, HubBackup.SafetyPath(DataStore.Root, now), suiteVersion ?? AppInfo.Version, now);
+                int n = HubBackup.Restore(path, DataStore.Root, HubBackup.SafetyPath(DataStore.Root, now), suiteVersion ?? AppInfo.Version, now, Renames());
                 LoadManifest();
                 footer.StatusText = "バックアップから " + n + " 個のファイルを復元しました";
                 if (ConfirmHook == null) Dialogs.Info(this, "復元しました (" + n + " 個のファイル)。\nアプリを開くと、復元したデータが使われます。\n\n元に戻したいときは、Teal Hub のデータ フォルダーの backups にある before-restore-… の zip から復元できます。");

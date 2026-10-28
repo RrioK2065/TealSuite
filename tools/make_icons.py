@@ -133,6 +133,22 @@ def g_sub(d):
     d.rounded_rectangle([410, 606, 614, 650], radius=20, fill=255)
 
 
+def g_wallet(d):
+    # 財布 (本体 + かぶせ + 留め具) + 中央に小さな「¥」
+    d.rounded_rectangle([206, 300, 818, 772], radius=86, fill=255)
+    d.rounded_rectangle([262, 236, 700, 330], radius=40, fill=255)      # 後ろから出ているお札
+    d.rectangle([262, 300, 700, 340], fill=0)
+    d.rounded_rectangle([600, 450, 860, 622], radius=60, fill=0)       # 留め具の窓
+    d.rounded_rectangle([628, 476, 834, 596], radius=46, fill=255)
+    d.ellipse([686, 500, 758, 572], fill=0)
+    # ¥
+    d.line([(318, 418), (402, 520)], fill=0, width=46)
+    d.line([(486, 418), (402, 520)], fill=0, width=46)
+    d.rounded_rectangle([380, 506, 424, 680], radius=20, fill=0)
+    d.rounded_rectangle([326, 548, 478, 580], radius=14, fill=0)
+    d.rounded_rectangle([326, 604, 478, 636], radius=14, fill=0)
+
+
 def g_tasks(d):
     # カレンダー + チェックマーク
     d.rounded_rectangle([238, 262, 786, 806], radius=72, fill=255)
@@ -152,7 +168,7 @@ GLYPHS = {
     "TealClip": g_clipboard,
     "TealVolume": g_volume,
     "TealUpdater": g_updater,
-    "TealSub": g_sub,
+    "TealWallet": g_wallet,
     "TealTasks": g_tasks,
 }
 

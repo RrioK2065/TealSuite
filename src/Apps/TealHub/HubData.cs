@@ -163,6 +163,35 @@ namespace TealSuite.Hub
         /// </summary>
         public static int Restore(string zipPath, string root, string safetyZip, string version, DateTime now)
         {
+            return Restore(zipPath, root, safetyZip, version, now, null);
+        }
+
+        /// <summary>
+        /// 1.9.0: 名前が変わったアプリ (旧ID → 新ID) のフォルダを付け替えて復元する。
+        /// zip に旧ID/ があって新ID/ がない (= 名前が変わる前のバックアップ) ときだけ、旧ID/… を新ID/… に書く
+        /// </summary>
+        public static Dictionary<string, string> FolderMap(BackupInfo info, IDictionary<string, string> renames)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (info == null || renames == null) return map;
+            foreach (var kv in renames)
+                if (info.Apps.Contains(kv.Key, StringComparer.OrdinalIgnoreCase) && !info.Apps.Contains(kv.Value, StringComparer.OrdinalIgnoreCase))
+                    map[kv.Key] = kv.Value;
+            return map;
+        }
+
+        static string MapName(string name, Dictionary<string, string> map)
+        {
+            if (map == null || map.Count == 0) return name;
+            var n = name.Replace('\\', '/');
+            int i = n.IndexOf('/');
+            if (i <= 0) return name;
+            string to;
+            return map.TryGetValue(n.Substring(0, i), out to) ? to + n.Substring(i) : name;
+        }
+
+        public static int Restore(string zipPath, string root, string safetyZip, string version, DateTime now, IDictionary<string, string> renames)
+        {
             var info = Inspect(zipPath);
             if (!info.Valid) throw new InvalidDataException(info.Error);
             Directory.CreateDirectory(root);
@@ -173,6 +202,7 @@ namespace TealSuite.Hub
                 PruneSafety(Path.GetDirectoryName(safetyZip));
             }
             var rootFull = Path.GetFullPath(root).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            var map = FolderMap(info, renames);
             int n = 0;
             using (var z = OpenZip(zipPath))
             {
@@ -180,7 +210,7 @@ namespace TealSuite.Hub
                 {
                     if (e.FullName.EndsWith("/") || string.Equals(e.FullName, Marker, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!SafeName(e.FullName) || Skip(e.FullName)) continue;
-                    var dest = Path.GetFullPath(Path.Combine(root, e.FullName.Replace('/', Path.DirectorySeparatorChar)));
+                    var dest = Path.GetFullPath(Path.Combine(root, MapName(e.FullName, map).Replace('/', Path.DirectorySeparatorChar)));
                     if (!dest.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)) continue;
                     Directory.CreateDirectory(Path.GetDirectoryName(dest));
                     var tmp = dest + ".restore.tmp";

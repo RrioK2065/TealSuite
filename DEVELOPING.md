@@ -10,7 +10,7 @@ Windows 用の小さなアプリ群「Teal ○○」です。すべて **C# 5 / 
 | `TealMemo` | Teal Memo | メモ | Memo |
 | `TealClip` | Teal Clip | コピー履歴 | ClipboardHistory |
 | `TealVolume` | Teal Volume | 音量操作 | VolumeMixer |
-| `TealSub` | Teal Sub | サブスク整理 | (なし。1.7.0 で追加) |
+| `TealWallet` | Teal Wallet | サブスク＆買い物リスト | TealSub (1.7.0〜1.8.0 の Teal Sub。1.9.0 で名前を変更) |
 | `TealTasks` | Teal Tasks | タスク管理＆カレンダー | (なし。1.7.0 で追加) |
 
 ## フォルダ構成
@@ -150,13 +150,26 @@ Teal Hub (TealHub.exe) は、**自分と同じフォルダの apps.json** を読
 - 新しいフォルダにデータがあれば何もしない (上書きしない)。失敗したら error.log に記録して空のまま起動
 - Teal Memo の「以前のメモアプリ (%APPDATA%\MemoApp)」からの取り込みはこの後に動き、notes.json が無いときだけ実行される (二重に取り込まない)
 
+#### 1.9.0 の Teal Sub → Teal Wallet (スイートの中での ID の変更)
+`AppMeta.cs` の `LegacyIds = { "TealSub" }` と apps.json の `legacyIds` に旧 ID を書き、`RenameMigration.OldNames` に旧 ID → 旧い表示名を足す。
+
+- データ: `DataStore.MigrateLegacyData()` は `%APPDATA%\TealSuite\<旧ID>` (スイートの中の旧 ID) も引き継ぎ元として探す。旧フォルダは残すので 1.8.0 に戻しても使える
+- `RenameMigration` (src/Common) … `MigratePrefs` (app-settings.json の旧 ID の項目を付け替え。新しい項目があれば空の値だけ補う)、
+  `MigrateStartup` (Run の `TealSuite.<旧ID>` を消して `TealSuite.<新ID>` で新しい exe を登録。無効にされていたら登録し直さない。新しい exe が無ければ何もしない)、
+  `RunForSelf` (アプリ自身が起動時に呼ぶ)。どれも何度呼んでも同じ結果
+- `HubMigration` (TealHub) … apps.json を読んだあと、`legacyIds` があるアプリについて上の 2 つを実行し、Teal Hub の上にお知らせを 1 回出す
+- apps.json のマージ (`MergeAppsJson`) … 新しい項目の `legacyIds` にある ID の古い項目は、その場所で置き換える (2 つにならない)
+- .tealupdate … 差分の `delete` に `apps/TealSub/*` が入る。TealUpdater はスイートのフォルダの exe で動いているもの (TealSub.exe も) を閉じてから入れ替える
+- バックアップの復元 (`HubBackup.FolderMap` / `Restore` の renames。HubData.cs) … 1.8.0 のバックアップの `TealSub/` は `TealWallet/` に戻す (復元の前に今のデータを before-restore-*.zip に残すのは 1.8.0 と同じ)
+- テストは tests/V190Tests.cs の RunRename / RunUpdate
+
 DPAPI の追加エントロピー (`Vault.cs` の `"AppSuite.PasswordMaker.vault.v1"`、`History.cs` の `"AppSuite.ClipboardHistory.v1"`)
 は 1.0 のデータを復号するために **名前を変えても変更しない** でください。
 
 ### C# の書き方の制約
 Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `-langversion:5` を付けています。
 `?.`、`$"..."`、`nameof`、`=>` のメンバー、getter のみの自動プロパティ、`out var` は使えません。
-ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume` / `TealSuite.Sub` / `TealSuite.Tasks`。
+ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume` / `TealSuite.Wallet` / `TealSuite.Tasks`。
 
 ## 色 (Theme.cs)
 
@@ -177,7 +190,7 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 初期設定: Teal Clip・Teal Sub・Teal Tasks がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
+- 初期設定: Teal Clip・Teal Wallet・Teal Tasks がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
   各アプリの `Program.ResidentByDefault`)。ほかはオフ。設定ページの説明文は apps.json の `residentNote`。Teal Hub は常に常駐
   (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
 - 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
@@ -318,18 +331,24 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 配布は GitHub Actions が作る (上の「リリース」)。手動なら `./build.sh package-update` で作るアップデート ファイル。
 保存形式を変えるときは各ファイルの `version` を上げ、古い形式を読めるようにしておくこと。
 
-## Teal Sub と Teal Tasks (1.7.0)
+## Teal Wallet (1.7.0〜1.8.0 は Teal Sub) と Teal Tasks (1.7.0)
 
 どちらも **AI・ネットワークを使わない** (HttpClient / WebRequest を参照しない)。データは `DataStore` の JSON だけ。
 画面以外のロジックは静的クラスにまとめ、`DateTime today/now` を引数で受け取る (テストで日付を固定できる)。
 
-- Teal Sub (`src/Apps/TealSub/`)
+- Teal Wallet (`src/Apps/TealWallet/`。名前空間 `TealSuite.Wallet`)
   - `SubModel.cs` … `Subscription` (金額は円の整数 `long`、周期 Monthly / Yearly / Weekly / EveryNMonths、無料期間、最後に使った日、使う頻度、状態)・`SubData` (subs.json)
   - `SubLogic.cs` … 次の更新日 (`NextRenewal`。開始日から n 回目を `AddMonths` で求めるので 1/31 → 2/28 → 3/31 とずれない)、
     月・年あたりの金額 (週払いは ×52÷12)、カテゴリ別、見直しの点数 (`Review`。最大 100、30 点以上が候補、60 点以上が「おすすめ」)、
     お知らせ (`DueNotices`。`id|renew|日付` の印で 1 回だけ)、CSV、解約ページの URL は http / https だけ (`IsOpenableUrl`)
   - `SubForms.cs` … 追加・編集、解約ガイド、設定。`MainForm.cs` … ダッシュボード / 一覧 / 見直し候補 / 解約済み
-  - 引数: `--tab=dashboard|list|review|cancelled`
+  - 引数: `--tab=dashboard|list|review|cancelled|shop|wants` (1〜6 でも可。`subs` は list と同じ)
+  - 買い物リスト (1.9.0): `ShopModel.cs` … `ShopItem` / `ShopList` / `Purchase` (履歴) / `WantItem` / `ShopData` (shopping.json)。
+    `ShopLogic.cs` … 1 行の読み取り (`ParseOne` / `Parse`。「牛乳 2 198円」。数字だけなら 100 未満は数、100 以上は値段)、売り場の推測、
+    同じ名前はまとめる (`Add`)、並べ方 (売り場の順 → 足した順、カゴの中は下)、合計 (`Totals`)、買い物を終える (`Finish`)、
+    よく買うもの (`FrequentItems`。欲しいものの記録は除く)、月の支出・予算 (`MonthSpend` / `BudgetLeft`)、テキスト (`ToText`)、欲しいもの (`OrderedWants` / `BuyWant`)、見本データ (`Sample`)。
+    `ShopForms.cs` … 品の編集・欲しいもの・履歴から追加。`MainForm.Shop.cs` … 買い物リスト / 欲しいもののタブとショートカット。
+    バックアップ (JSON) は `SubData.Shopping` に入れる (1.8.0 の subs.json は Shopping なしで読める)
 - Teal Tasks (`src/Apps/TealTasks/`)
   - `QuickParser.cs` … 「明日15時 歯医者 #病院」などの日本語の 1 行を `ParseResult` に。全角は先に半角へ (`Normalize`)。
     時刻だけで過ぎていれば明日、「1〜6 時」は午後、1 週間以上前の M/D は来年
@@ -401,8 +420,9 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   ShortcutTests.cs (受け持ち・重複・解除・Hub の画面)、UpdaterTests.cs (マニフェスト・ハッシュ・適用と元に戻す・apps.json のマージ・確認画面)、
   OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)、
   SubTasksTests.cs (Teal Sub の更新日・合計・見直しの点数・お知らせ、Teal Tasks の入力の読み取り・おすすめ順・くり返し・お知らせ・統計・画面)、
-  V180Tests.cs (1.8.0 の追加機能と、1.7.0 のデータをそのまま読めること)
-- Teal Sub / Teal Tasks の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
+  V180Tests.cs (1.8.0 の追加機能と、1.7.0 のデータをそのまま読めること)、
+  V190Tests.cs (買い物リストの読み取り・ロジック・画面、Teal Sub → Teal Wallet の引き継ぎ (データ・設定・Run・バックアップ)、apps.json のマージと .tealupdate)
+- Teal Wallet / Teal Tasks の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
   `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealTasks/TealTasks.exe out.png`。
   時刻で見た目が変わるので、README の画像は `faketime -f "@2026-10-27 09:20:00"` を前に付けて撮った (seed も同じ時刻で)。
   お知らせのバルーンは起動 5 秒後に出るので、待ち時間は 4 秒にする

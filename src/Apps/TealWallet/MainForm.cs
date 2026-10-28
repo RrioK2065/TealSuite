@@ -1,6 +1,7 @@
-// Teal Sub (サブスク整理) - メイン画面
-//  タブ: ダッシュボード / 一覧 / 見直し候補 / 解約済み (Ctrl+1〜4、または ←→)
-//  Ctrl+N 追加 / Ctrl+F 検索 / Enter 編集 / Delete 削除 / Ctrl+U 今日使った
+// Teal Wallet (サブスク＆買い物リスト) - メイン画面
+//  タブ: ダッシュボード / サブスク / 見直し候補 / 解約済み / 買い物リスト / 欲しいもの (Ctrl+1〜6、または ←→)
+//  Ctrl+N 追加 (いまのタブのもの) / Ctrl+F 検索 / Enter 編集 / Delete 削除 / Ctrl+U 今日使った
+//  買い物リストのキー操作は MainForm.Shop.cs
 //  お知らせ: 起動中 (常駐中) だけ、30 分ごとと日付が変わったときに確かめる
 using System;
 using System.Collections.Generic;
@@ -9,16 +10,16 @@ using System.Linq;
 using System.Windows.Forms;
 using TealSuite.Common;
 
-namespace TealSuite.Sub
+namespace TealSuite.Wallet
 {
-    public class MainForm : Form
+    public partial class MainForm : Form
     {
         public SubData Data;
         readonly HeaderBar header;
         readonly FooterBar footer = new FooterBar();
-        public readonly SegmentTabs Tabs = new SegmentTabs("ダッシュボード", "一覧", "見直し候補", "解約済み");
+        public readonly SegmentTabs Tabs = new SegmentTabs("ダッシュボード", "サブスク", "見直し候補", "解約済み", "買い物リスト", "欲しいもの");
         readonly Panel content = new Panel { Dock = DockStyle.Fill };
-        readonly Panel[] views = new Panel[4];
+        readonly Panel[] views = new Panel[6];
         readonly Timer remindTimer = new Timer();
         ResidentContext resident;
         DateTime lastCheckDay = DateTime.MinValue;
@@ -27,7 +28,7 @@ namespace TealSuite.Sub
         // ダッシュボード
         readonly Panel dashEmpty = new CardPanel();
         readonly Panel dashMain = new Panel { Dock = DockStyle.Fill };
-        public readonly StatTile TileMonthly = new StatTile(), TileYearly = new StatTile(), TileCount = new StatTile();
+        public readonly StatTile TileMonthly = new StatTile(), TileYearly = new StatTile(), TileCount = new StatTile(), TileShop = new StatTile();
         readonly WrapLabel dashAlert = new WrapLabel();
         readonly CategoryChart chart = new CategoryChart();
         readonly RowList upcoming = new RowList(2) { Dock = DockStyle.Fill, EmptyText = "これから 30 日の支払いはありません" };
@@ -58,9 +59,9 @@ namespace TealSuite.Sub
             btnPlan.Click += (s, e) => ShowForecast();
             tips.SetToolTip(btnPlan, "これから 12 か月の支払いと、支払い方法ごとの金額 (Ctrl+P)");
             var btnAdd = header.AddAction(new FlatButton("＋ 追加", ButtonKind.Primary).FitWidth(96));
-            btnAdd.Click += (s, e) => AddNew();
+            btnAdd.Click += (s, e) => AddForTab();
             btnSettings.Click += (s, e) => OpenSettings();
-            tips.SetToolTip(btnAdd, "サブスクを追加 (Ctrl+N)");
+            tips.SetToolTip(btnAdd, "いまのタブに追加 (Ctrl+N): サブスク / 買うもの / 欲しいもの");
             tips.SetToolTip(btnSettings, "お知らせ・CSV・バックアップ");
 
             Tabs.Dock = DockStyle.Top;
@@ -71,6 +72,8 @@ namespace TealSuite.Sub
             BuildList(views[1]);
             BuildReview(views[2]);
             BuildCancelled(views[3]);
+            BuildShop(views[4]);
+            BuildWants(views[5]);
             foreach (var v in views) content.Controls.Add(v);
 
             var body = new Panel { Dock = DockStyle.Fill, Padding = Theme.P(12, 8, 12, 12), BackColor = Theme.Background };
@@ -85,6 +88,10 @@ namespace TealSuite.Sub
             Data = DataStore.LoadOrDefault(SubData.FileName, () => new SubData(), out warn);
             Data.Normalize();
             if (warn != null) Load += (s, e) => Dialogs.Warn(this, warn);
+            string shopWarn;
+            Shop = DataStore.LoadOrDefault(ShopData.FileName, ShopData.CreateDefault, out shopWarn);
+            Shop.Normalize();
+            if (shopWarn != null) Load += (s, e) => Dialogs.Warn(this, shopWarn);
 
             WindowMemory.Attach(this, 980, 680);
             remindTimer.Interval = 5000;
@@ -104,7 +111,7 @@ namespace TealSuite.Sub
 
         void OnTimeChanged(object sender, EventArgs e) { AppHost.OnUi(() => { RefreshAll(); CheckReminders(); }); }
 
-        /// <summary>--tab=1〜4 (またはタブ名) で最初に開くタブ (画面写真用)</summary>
+        /// <summary>--tab=1〜6 (またはタブ名) で最初に開くタブ (画面写真用)</summary>
         static int StartTab()
         {
             foreach (var a in Environment.GetCommandLineArgs())
@@ -112,8 +119,8 @@ namespace TealSuite.Sub
                 if (!a.StartsWith("--tab=")) continue;
                 var v = a.Substring(6);
                 int n;
-                if (int.TryParse(v, out n) && n >= 1 && n <= 4) return n - 1;
-                switch (v) { case "list": return 1; case "review": return 2; case "cancelled": return 3; }
+                if (int.TryParse(v, out n) && n >= 1 && n <= 6) return n - 1;
+                switch (v) { case "list": case "subs": return 1; case "review": return 2; case "cancelled": return 3; case "shop": return 4; case "wants": return 5; }
             }
             return 0;
         }
@@ -131,6 +138,8 @@ namespace TealSuite.Sub
             for (int k = 0; k < views.Length; k++) views[k].Visible = k == i;
             if (i == 1) List.Focus();
             if (i == 2) LayoutCards();
+            if (i == 4) QuickAdd.Focus();
+            if (i == 5) WantList.Focus();
         }
 
         public void Save()
@@ -145,20 +154,39 @@ namespace TealSuite.Sub
             RefreshList();
             RefreshReview();
             RefreshCancelled();
+            RefreshShop();
+            RefreshWants();
+            footer.StatusText = FooterText();
+        }
+
+        public string FooterText()
+        {
             int paying = Data.Subs.Count(x => x.Paying);
-            footer.StatusText = paying + " 件を支払い中  ・  月 " + Fmt.Yen(SubLogic.MonthlyTotal(Data.Subs)) + "  ・  年 " + Fmt.Yen(SubLogic.YearlyTotal(Data.Subs));
+            return paying + " 件を支払い中  ・  月 " + Fmt.Yen(SubLogic.MonthlyTotal(Data.Subs)) + "  ・  年 " + Fmt.Yen(SubLogic.YearlyTotal(Data.Subs))
+                + "  ・  今月の買い物 " + Fmt.Yen(ShopLogic.MonthSpend(Shop, Today));
+        }
+
+        /// <summary>＋ 追加 / Ctrl+N: いまのタブのものを追加</summary>
+        public void AddForTab()
+        {
+            if (Tabs.SelectedIndex == 4) { QuickAdd.Focus(); QuickAdd.SelectAll(); }
+            else if (Tabs.SelectedIndex == 5) AddWant();
+            else AddNew();
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (ShopKey(keyData)) return true;
             switch (keyData)
             {
-                case Keys.Control | Keys.N: AddNew(); return true;
+                case Keys.Control | Keys.N: AddForTab(); return true;
                 case Keys.Control | Keys.P: ShowForecast(); return true;
                 case Keys.Control | Keys.D1: Tabs.SelectedIndex = 0; return true;
                 case Keys.Control | Keys.D2: Tabs.SelectedIndex = 1; return true;
                 case Keys.Control | Keys.D3: Tabs.SelectedIndex = 2; return true;
                 case Keys.Control | Keys.D4: Tabs.SelectedIndex = 3; return true;
+                case Keys.Control | Keys.D5: Tabs.SelectedIndex = 4; return true;
+                case Keys.Control | Keys.D6: Tabs.SelectedIndex = 5; return true;
                 case Keys.Control | Keys.F: Tabs.SelectedIndex = 1; Search.Focus(); Search.SelectAll(); return true;
                 case Keys.Control | Keys.U: { var s = CurrentSub(); if (s != null) MarkUsed(s); return true; }
             }
@@ -255,10 +283,10 @@ namespace TealSuite.Sub
         void OpenSettings()
         {
             bool res = resident != null && resident.IsResident;
-            using (var f = new SubSettingsForm(Data.Settings, res, ExportCsv, Backup, Restore, ImportCsv))
+            using (var f = new SubSettingsForm(Data.Settings, res, ExportCsv, Backup, Restore, ImportCsv, Shop.Settings))
                 if (f.ShowDialog(this) != DialogResult.OK) return;
-            Data.Normalize();
-            Save(); RefreshAll();
+            Data.Normalize(); Shop.Normalize();
+            Save(); ShopSave(); RefreshAll();
             CheckReminders();
         }
 
@@ -299,19 +327,40 @@ namespace TealSuite.Sub
             return r.Items.Count;
         }
 
+        /// <summary>バックアップ (JSON): サブスクに買い物リスト (shopping) も入れる。1.8.0 までのバックアップ (サブスクだけ) も戻せる</summary>
         void Backup()
         {
-            var p = FileKit.ExportJson(this, Data, "TealSub");
-            if (p != null) footer.StatusText = "バックアップしました: " + p;
+            Data.Shopping = Shop;
+            try
+            {
+                var p = FileKit.ExportJson(this, Data, "TealWallet");
+                if (p != null) footer.StatusText = "バックアップしました: " + p;
+            }
+            finally { Data.Shopping = null; }
         }
         void Restore()
         {
             var d = FileKit.ImportJson<SubData>(this, SubData.FileName, x => x.Subs != null);
             if (d == null) return;
+            var shop = d.Shopping;
+            d.Shopping = null;
             d.Normalize();
             Data = d;
-            Save(); RefreshAll();
-            Dialogs.Info(this, "バックアップから " + d.Subs.Count + " 件を戻しました。");
+            Save();
+            if (shop != null)
+            {
+                try
+                {
+                    var cur = DataStore.PathOf(ShopData.FileName);
+                    if (System.IO.File.Exists(cur)) System.IO.File.Copy(cur, cur + ".before-restore-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
+                }
+                catch { }
+                shop.Normalize();
+                Shop = shop;
+                ShopSave();
+            }
+            RefreshAll();
+            Dialogs.Info(this, "バックアップから サブスク " + d.Subs.Count + " 件" + (shop != null ? "と買い物リスト (" + shop.Lists.Count + " 個のリスト・欲しいもの " + shop.Wants.Count + " 件)" : "") + " を戻しました。");
         }
 
         // ================================================================ お知らせ
@@ -333,7 +382,7 @@ namespace TealSuite.Sub
             {
                 var text = string.Join("\n", list.Take(4).Select(n => "・" + n.Title.Substring(n.Title.IndexOf(':') + 1).Trim() + " " + n.Text.Substring(0, n.Text.IndexOf(')') + 1)));
                 if (list.Count > 4) text += "\nほか " + (list.Count - 4) + " 件";
-                shown = ctx.Notify("Teal Sub: 支払い・無料期間のお知らせ " + list.Count + " 件", text, ToolTipIcon.Info);
+                shown = ctx.Notify("Teal Wallet: 支払い・無料期間のお知らせ " + list.Count + " 件", text, ToolTipIcon.Info);
             }
             if (shown)
             {
@@ -362,10 +411,13 @@ namespace TealSuite.Sub
             dashEmpty.Resize += (s, e) => FitHeight(dashEmpty);
 
             // 数字のタイル
-            var tiles = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, RowCount = 1, Height = TileMonthly.PreferredHeight, BackColor = Theme.Background };
-            for (int i = 0; i < 3; i++) tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-            foreach (var t in new[] { TileMonthly, TileYearly, TileCount }) { t.Dock = DockStyle.Fill; t.Margin = new Padding(0, 0, Theme.S(8), 0); tiles.Controls.Add(t); }
-            TileCount.Margin = Padding.Empty;
+            var tiles = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 4, RowCount = 1, Height = TileMonthly.PreferredHeight, BackColor = Theme.Background };
+            for (int i = 0; i < 4; i++) tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
+            foreach (var t in new[] { TileMonthly, TileYearly, TileCount, TileShop }) { t.Dock = DockStyle.Fill; t.Margin = new Padding(0, 0, Theme.S(8), 0); tiles.Controls.Add(t); }
+            TileShop.Margin = Padding.Empty;
+            TileShop.Cursor = Cursors.Hand;
+            TileShop.Click += (s, e) => Tabs.SelectedIndex = 4;
+            tips.SetToolTip(TileShop, "買い物リストを開く (Ctrl+5)");
 
             dashAlert.Font = Theme.Body; dashAlert.Dock = DockStyle.Top; dashAlert.Padding = Theme.P(2, 8, 2, 0);
             dashAlert.Cursor = Cursors.Hand;
@@ -388,6 +440,8 @@ namespace TealSuite.Sub
 
             dashMain.Controls.Add(grid);
             dashMain.Controls.Add(dashAlert);
+            dashTotal.Font = Theme.Body; dashTotal.ForeColor = Theme.Text; dashTotal.Dock = DockStyle.Top; dashTotal.Padding = Theme.P(2, 8, 2, 0);
+            dashMain.Controls.Add(dashTotal);
             dashMain.Controls.Add(tiles);
             v.Controls.Add(dashMain);
             v.Controls.Add(dashEmpty);
@@ -404,7 +458,7 @@ namespace TealSuite.Sub
 
         void RefreshDashboard()
         {
-            bool empty = Data.Subs.Count == 0;
+            bool empty = Data.Subs.Count == 0 && Shop.History.Count == 0;
             dashEmpty.Visible = empty;
             dashMain.Visible = !empty;
             if (empty) { FitHeight(dashEmpty); return; }
@@ -437,6 +491,7 @@ namespace TealSuite.Sub
                 dashAlert.Text = "いまのところ見直し候補はありません。使う頻度や最後に使った日を入れておくと、使っていないものを見つけやすくなります。";
             }
 
+            RefreshShopTile();
             chart.SetData(SubLogic.ByCategory(Data.Subs), m);
 
             var items = new List<UpItem>();

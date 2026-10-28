@@ -10,7 +10,7 @@ using System.Linq;
 using System.Windows.Forms;
 using C = AM::TealSuite.Common;
 using H = AM::TealSuite.Hub;
-[assembly: System.Reflection.AssemblyVersion("1.8.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.9.0.0")]
 
 static class HubShots
 {

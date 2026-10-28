@@ -1,4 +1,4 @@
-// Teal Sub (サブスク整理) - データの形と保存 (%APPDATA%\TealSuite\TealSub\subs.json)
+// Teal Wallet (サブスク＆買い物リスト) - データの形と保存 (%APPDATA%\TealSuite\TealWallet\subs.json)
 // カード番号などの秘密情報は扱わない (支払い方法は「楽天カード」「PayPay」のような名前だけ)
 using System;
 using System.Collections.Generic;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using TealSuite.Common;
 
-namespace TealSuite.Sub
+namespace TealSuite.Wallet
 {
     public enum Cycle { Monthly, Yearly, Weekly, EveryNMonths }
     public enum Usage { Daily, Weekly, Monthly, Rarely }
@@ -96,6 +96,8 @@ namespace TealSuite.Sub
         [DataMember(Name = "settings", Order = 3)] public SubSettings Settings = new SubSettings();
         /// <summary>お知らせ済みの印 ("id|renew|2026-11-01" など)。同じお知らせを何度も出さない</summary>
         [DataMember(Name = "notified", Order = 4)] public List<string> Notified = new List<string>();
+        /// <summary>バックアップ (JSON) のときだけ入れる買い物リスト (1.9.0〜)。subs.json には書かない (ふだんは null)</summary>
+        [DataMember(Name = "shopping", Order = 5, EmitDefaultValue = false)] public ShopData Shopping;
 
         public void Normalize()
         {
