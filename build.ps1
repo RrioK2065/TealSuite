@@ -136,5 +136,7 @@ if ($Tests -or $TestsOnly) {
     Invoke-Csc ($flags + @("/target:exe", "/out:$(Join-Path $TestsDir 'SmokeTests.exe')") + $targs) "SmokeTests"
     Write-Host "== tests (Sleeper.exe)"
     Invoke-Csc ($flags + @("/target:winexe", "/reference:System.dll", "/out:$(Join-Path $TestsDir 'Sleeper.exe')", (Join-Path $Root "tests\win\Sleeper.cs"))) "Sleeper"
+    Write-Host "== tests (PinTarget.exe)"
+    Invoke-Csc ($flags + @("/target:winexe", "/reference:System.dll", "/reference:System.Drawing.dll", "/reference:System.Windows.Forms.dll", "/out:$(Join-Path $TestsDir 'PinTarget.exe')", (Join-Path $Root "tests\win\PinTarget.cs"))) "PinTarget"
     Write-Host "テストのビルド完了 -> $TestsDir (実行: tests\run_tests.ps1 -Dist `"$Out`")"
 }

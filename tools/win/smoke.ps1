@@ -8,6 +8,7 @@
     4. スクリーンショットを撮る (撮れなくても失敗にしない)
     5. 終了の合図 (Local\TealSuite.<id>.Exit) を送り、-Timeout 秒以内に終わることを確かめる (終わらなければ失敗)
   1 つでも失敗があれば終了コード 1。
+    Teal Pin (1.11.0) も apps.json から自動で対象になる (/show で画面を出す)。最前面の本物の確認は SmokeTests の「Windows: 本物の最前面」(build\PinTarget.exe)。
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Suite,
@@ -27,6 +28,7 @@ $targets = @(@{ id = "TealHub"; exe = "TealHub.exe"; args = "" })
 foreach ($a in $manifest.apps) {
     $appArgs = ""
     if ($a.id -eq "TealClip") { $appArgs = "/show" }   # 常駐中はトレイだけなので、画面を出す引数を付ける
+    if ($a.id -eq "TealPin") { $appArgs = "/show" }    # 1.11.0: 常駐アプリ。画面を出して起動・終了の合図 (終了で固定をすべて外す) を確かめる
     $targets += @{ id = $a.id; exe = $a.exe; args = $appArgs }
 }
 

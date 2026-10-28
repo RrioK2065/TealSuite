@@ -326,6 +326,7 @@ namespace TealSuite.Hub
                 case "TealClip": return "押すと、コピーの履歴をその場に呼び出します (選ぶと貼り付け)。";
                 case "TealVolume": return "押すと、音量ミキサーを開きます (前面にあるときは隠します)。";
                 case "TealPlan": return "押すと、Teal Plan の画面を前面に出します (すぐにひとこと入力でタスクや予定を追加できます)。";
+                case "TealPin": return "押すと、いま前面にあるウィンドウを最前面に固定します (もう一度押すと外します)。Teal Pin が起動していなければ起動して固定します。";
                 default: return "押すと、" + app.Name + " の画面を前面に出します (前面にあるときは隠します)。";
             }
         }
