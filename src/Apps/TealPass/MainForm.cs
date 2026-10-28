@@ -71,6 +71,7 @@ namespace TealSuite.Pass
             MinimumSize = Theme.S(960, 600);
             KeyPreview = true;
             settings = DataStore.LoadQuiet(SettingsFile, () => new PmSettings());
+            AppHost.OpenRequested = r => OpenFromRequest(r);
             if (settings.Generator == null) settings.Generator = new PasswordOptions();
             settings.Generator.Normalize();
             clip.Seconds = Math.Max(5, Math.Min(300, settings.ClipboardClearSeconds));
@@ -83,6 +84,9 @@ namespace TealSuite.Pass
             btnCheck.Click += (s, e) => ShowHealth();
             new ToolTip().SetToolTip(btnCheck, "使い回し・弱い・1 年以上変えていないパスワードを調べます");
             var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Secondary)).FitWidth(90);
+            var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Secondary)).FitWidth(72);
+            btnSettings.Click += (s, e) => OpenSettings();
+            new ToolTip().SetToolTip(btnSettings, "クリップボードを消すまでの時間・Teal Hub の検索");
             moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
             btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
 
@@ -448,7 +452,7 @@ namespace TealSuite.Pass
 
         bool Persist()
         {
-            try { VaultStore.Save(vault); return true; }
+            try { VaultStore.Save(vault); SiteIndex.Update(vault, settings.SiteIndex); return true; }
             catch (Exception ex)
             {
                 DataStore.Log("vault save: " + ex);
@@ -463,6 +467,7 @@ namespace TealSuite.Pass
             {
                 vault = VaultStore.Load();
                 vaultReady = true;
+                SiteIndex.Update(vault, settings.SiteIndex);
             }
             catch (Exception ex)
             {
@@ -479,6 +484,48 @@ namespace TealSuite.Pass
             }
             RefreshList(null);
             lastAction = vault.Entries.Count + " 件を読み込みました";
+            UpdateFooter();
+            if (pendingOpen != null) { var r = pendingOpen; pendingOpen = null; OpenFromRequest(r); }
+        }
+
+        // ================= 1.10.0: Teal Hub との連携 =================
+
+        OpenRequest pendingOpen;
+        public PmSettings Settings { get { return settings; } }
+
+        /// <summary>Teal Hub の検索から「このサイトを開いて」と頼まれた (key はサイト名)。見つかったら true</summary>
+        public bool OpenFromRequest(OpenRequest r)
+        {
+            if (r == null || r.Kind != "site" || string.IsNullOrEmpty(r.Key)) return false;
+            if (!vaultReady) { pendingOpen = r; return false; }
+            var key = r.Key.Trim();
+            var en = vault.Entries.Where(x => string.Equals((x.Site ?? "").Trim(), key, StringComparison.CurrentCultureIgnoreCase))
+                .OrderByDescending(x => x.Favorite).ThenByDescending(x => x.Updated).FirstOrDefault();
+            if (en == null) { lastAction = "「" + key + "」は見つかりませんでした"; UpdateFooter(); return false; }
+            SelectEntry(en);
+            list.Focus();
+            lastAction = "「" + en.Site + "」を開きました"; UpdateFooter();
+            return true;
+        }
+
+        /// <summary>テスト用: 設定のダイアログの代わり (編集してから true で保存)</summary>
+        public Func<PmSettings, bool> SettingsHook;
+
+        public void OpenSettings()
+        {
+            var copy = new PmSettings { Generator = settings.Generator, ClipboardClearSeconds = settings.ClipboardClearSeconds, SiteIndex = settings.SiteIndex };
+            bool ok;
+            if (SettingsHook != null) ok = SettingsHook(copy);
+            else using (var f = new PassSettingsForm(copy)) ok = f.ShowDialog(this) == DialogResult.OK;
+            if (!ok) return;
+            settings.ClipboardClearSeconds = Math.Max(5, Math.Min(300, copy.ClipboardClearSeconds));
+            clip.Seconds = settings.ClipboardClearSeconds;
+            bool changed = settings.SiteIndex != copy.SiteIndex;
+            settings.SiteIndex = copy.SiteIndex;
+            SaveSettings();
+            if (vaultReady) SiteIndex.Update(vault, settings.SiteIndex);
+            else if (!settings.SiteIndex) SiteIndex.Delete();
+            lastAction = !changed ? "設定を保存しました" : settings.SiteIndex ? "サイト名を Teal Hub の検索に出すようにしました" : "サイト名を Teal Hub の検索に出さないようにしました (索引を消しました)";
             UpdateFooter();
         }
 

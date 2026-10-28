@@ -9,7 +9,7 @@ alias CH apps/TealClip/TealClip.exe
 alias VM apps/TealVolume/TealVolume.exe
 alias UP TealUpdater.exe
 alias SUB apps/TealWallet/TealWallet.exe
-alias TASKS apps/TealTasks/TealTasks.exe
+alias TASKS apps/TealPlan/TealPlan.exe
 ref System.dll
 ref System.Core.dll
 ref System.Xml.dll
@@ -30,4 +30,6 @@ src tests/OnlineUpdateTests.cs
 src tests/SubTasksTests.cs
 src tests/V180Tests.cs
 src tests/V190Tests.cs
+src tests/V1100Tests.cs
+src tests/V1100IntegrationTests.cs
 src tests/WinTests.cs

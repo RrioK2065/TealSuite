@@ -4,7 +4,7 @@
 //     例: hub "その他 ▾"、volume "プリセット ▾"、sub "支払い予定"
 //   ビルド: build/ に dist/TealSuite の中身をコピーしてから (ヘッダーのアイコンを出すには、撮るアプリの -resource:assets/icons/<Id>.png,AppIcon.png と .ico,AppIcon.ico も付ける)
 //     mcs -out:build/V180Shots.exe -codepage:utf8 -langversion:5 -r:AM=build/TealHub.exe -r:VM=build/apps/TealVolume/TealVolume.exe \
-//         -r:SUB=build/apps/TealWallet/TealWallet.exe -r:TASKS=build/apps/TealTasks/TealTasks.exe -r:System.Windows.Forms.dll -r:System.Drawing.dll tests/v180_shots.cs
+//         -r:SUB=build/apps/TealWallet/TealWallet.exe -r:TASKS=build/apps/TealPlan/TealPlan.exe -r:System.Windows.Forms.dll -r:System.Drawing.dll tests/v180_shots.cs
 extern alias AM;
 extern alias VM;
 extern alias SUB;
@@ -14,7 +14,7 @@ using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyVersion("1.9.1.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
 
 static class V180Shots
 {
@@ -79,7 +79,7 @@ static class V180Shots
         }
         else
         {
-            TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "タスク管理＆カレンダー");
+            TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "タスク＆予定");
             var f = new TASKS::TealSuite.Tasks.MainForm();
             f.StartPosition = FormStartPosition.Manual; f.Location = new System.Drawing.Point(0, 0);
             if (mode == "tasks:bulk")

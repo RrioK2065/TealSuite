@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Volume - 音量操作")]
 [assembly: AssemblyDescription("アプリごとの音量を調整する")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.9.1.0")]
-[assembly: AssemblyFileVersion("1.9.1.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace TealSuite.Volume
 {

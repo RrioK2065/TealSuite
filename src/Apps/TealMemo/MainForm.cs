@@ -106,6 +106,8 @@ namespace TealSuite.Memo
             editor.MaxLength = 0;
             editor.HideSelection = false;
             editor.TextChanged += EditorChanged;
+            // 1.10.0: 「#」のあとに Teal Memo と Teal Plan のタグの候補を出す (Enter・Tab で入れる。Esc で閉じる)
+            EditorTags = TagSuggest.Attach(editor, () => SuiteTags.Collect(SuiteRead.MemoId, data.Notes.Where(n => !n.InTrash).SelectMany(n => n.Tags)), true);
             editor.KeyDown += (s, e) => { if (e.Control && e.KeyCode == Keys.A) { editor.SelectAll(); e.Handled = e.SuppressKeyPress = true; } };
             rightCard.Controls.Add(editor);
 
@@ -131,6 +133,7 @@ namespace TealSuite.Memo
             string warn;
             data = NoteStore.Load(out warn);
             if (warn != null) Load += (s, e) => Dialogs.Warn(this, warn);
+            AppHost.OpenRequested = r => OpenFromRequest(r);
             settings = DataStore.LoadQuiet(MemoSettings.FileName, () => new MemoSettings());
             ApplyFontSize();
             RefreshViews();
@@ -515,6 +518,29 @@ namespace TealSuite.Memo
             if (skipped.Count > 0 && IsHandleCreated)
                 Dialogs.Warn(this, "読み込めなかったファイルがあります (空・大きすぎる・開けない):\n" + string.Join("\n", skipped.Take(10)));
             return n;
+        }
+
+        // ---- 1.10.0: ほかのアプリとの連携 ----
+
+        public TagSuggest EditorTags { get; private set; }
+
+        /// <summary>Teal Hub の「今日」・検索から「このメモを開いて」と頼まれた。見つかったら true</summary>
+        public bool OpenFromRequest(OpenRequest r)
+        {
+            if (r == null || r.Kind != "note" || string.IsNullOrEmpty(r.Key)) return false;
+            var n = data.Notes.FirstOrDefault(x => x.Id == r.Key);
+            if (n == null) { footer.StatusText = "メモが見つかりませんでした (消されたかもしれません)"; return false; }
+            saveTimer.Stop(); SaveNow(false);
+            searchBox.Text = "";
+            int vi = n.InTrash ? viewKeys.IndexOf("trash") : 0;
+            if (vi >= 0 && ViewBox.SelectedIndex != vi) ViewBox.SelectedIndex = vi;
+            RefreshList();
+            int i = list.Items.IndexOf(n);
+            if (i >= 0) list.SelectedIndex = i; else SelectNote(n);
+            if (current != n) SelectNote(n);
+            editor.Focus();
+            footer.StatusText = "「" + n.Title + "」を開きました";
+            return true;
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

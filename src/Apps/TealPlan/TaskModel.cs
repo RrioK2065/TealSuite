@@ -1,4 +1,4 @@
-// Teal Tasks - データの形と保存 (%APPDATA%\TealSuite\TealTasks\tasks.json)
+// Teal Plan - データの形と保存 (%APPDATA%\TealSuite\TealPlan\tasks.json。1.9.x までは TealTasks)
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -70,14 +70,26 @@ namespace TealSuite.Tasks
         [DataMember(Name = "remindMinutes", Order = 2)] public int RemindMinutes = 15;
         /// <summary>その日最初に「今日のタスク N 件」をお知らせする</summary>
         [DataMember(Name = "morning", Order = 3)] public bool Morning = true;
-        [OnDeserializing] void Defaults(StreamingContext c) { Remind = true; RemindMinutes = 15; Morning = true; }
+        /// <summary>1.10.0: 一覧で見るもの (0 タスク / 1 予定 / 2 すべて)</summary>
+        [DataMember(Name = "listKind", Order = 4, EmitDefaultValue = false)] public int ListKind;
+        /// <summary>1.10.0: 予定の一覧の範囲 (MainForm.AgendaRanges の番号)</summary>
+        [DataMember(Name = "agendaRange", Order = 5, EmitDefaultValue = false)] public int AgendaRange;
+        /// <summary>1.10.0: カレンダーに出すもの (0 すべて / 1 タスクだけ / 2 予定だけ)</summary>
+        [DataMember(Name = "calShow", Order = 6, EmitDefaultValue = false)] public int CalShow;
+        /// <summary>1.10.0: 新しい予定のお知らせ (何分前。-1 = しない)</summary>
+        [DataMember(Name = "eventRemind", Order = 7)] public int EventRemind = 10;
+        /// <summary>1.10.0: Teal Wallet のサブスクの支払い日をカレンダーに出す</summary>
+        [DataMember(Name = "showWallet", Order = 8)] public bool ShowWallet = true;
+        [OnDeserializing] void Defaults(StreamingContext c) { Remind = true; RemindMinutes = 15; Morning = true; EventRemind = 10; ShowWallet = true; }
     }
 
     [DataContract]
     public class TaskData
     {
         public const string FileName = "tasks.json";
-        [DataMember(Name = "version", Order = 1)] public int Version = 1;
+        [DataMember(Name = "version", Order = 1)] public int Version = CurrentVersion;
+        /// <summary>2 = 1.10.0 (予定と、小タスクを開いているタスクを追加)</summary>
+        public const int CurrentVersion = 2;
         [DataMember(Name = "tasks", Order = 2)] public List<TaskItem> Tasks = new List<TaskItem>();
         [DataMember(Name = "settings", Order = 3)] public TaskSettings Settings = new TaskSettings();
         /// <summary>お知らせ済みの印。同じお知らせを何度も出さない</summary>
@@ -85,7 +97,20 @@ namespace TealSuite.Tasks
         /// <summary>1.8.0: よく使うタスクのひな形</summary>
         [DataMember(Name = "templates", Order = 5, EmitDefaultValue = false)] public List<TaskTemplate> Templates;
 
+        /// <summary>1.10.0: 予定 (タスクとは別)</summary>
+        [DataMember(Name = "events", Order = 6, EmitDefaultValue = false)] public List<EventItem> Events = new List<EventItem>();
+        /// <summary>1.10.0: 一覧で小タスクを開いているタスクの id (元に戻すの対象外)</summary>
+        [DataMember(Name = "expanded", Order = 7, EmitDefaultValue = false)] public List<string> Expanded = new List<string>();
+
         public TaskItem Find(string id) { return Tasks.FirstOrDefault(t => t.Id == id); }
+        public EventItem FindEvent(string id) { return Events.FirstOrDefault(e => e.Id == id); }
+        public bool IsExpanded(TaskItem t) { return t != null && Expanded.Contains(t.Id); }
+        public void SetExpanded(TaskItem t, bool on)
+        {
+            if (t == null) return;
+            if (on) { if (!Expanded.Contains(t.Id)) Expanded.Add(t.Id); }
+            else Expanded.Remove(t.Id);
+        }
 
         public void Normalize()
         {
@@ -94,6 +119,28 @@ namespace TealSuite.Tasks
             if (Settings == null) Settings = new TaskSettings();
             if (Notified == null) Notified = new List<string>();
             Settings.RemindMinutes = Math.Max(0, Math.Min(24 * 60, Settings.RemindMinutes));
+            Settings.ListKind = Math.Max(0, Math.Min(2, Settings.ListKind));
+            Settings.CalShow = Math.Max(0, Math.Min(2, Settings.CalShow));
+            Settings.EventRemind = Math.Max(-1, Math.Min(24 * 60, Settings.EventRemind));
+            if (Events == null) Events = new List<EventItem>();
+            Events.RemoveAll(e => e == null || !Fmt.ParseIso(e.Start).HasValue);
+            foreach (var e in Events)
+            {
+                if (string.IsNullOrEmpty(e.Id)) e.Id = Guid.NewGuid().ToString("N");
+                if (e.Title == null) e.Title = "";
+                if (e.Tags == null) e.Tags = new List<string>();
+                e.Tags = e.Tags.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToList();
+                if (Array.IndexOf(EventLogic.ColorKeys, e.Color ?? "") < 0) e.Color = "teal";
+                if (e.RemindMin < -1) e.RemindMin = -1;
+                if (e.Skip != null && e.Skip.Count == 0) e.Skip = null;
+                // 終わりが無い・始まりより前なら直す (終日はその日だけ、時刻つきは 1 時間)
+                var st = e.StartAt;
+                if (e.AllDay) { var en = Fmt.ParseIso(e.End); e.Start = Fmt.Iso(st.Date); e.End = Fmt.Iso(en.HasValue && en.Value.Date >= st.Date ? en.Value.Date : st.Date); }
+                else { var en = Fmt.ParseIso(e.End); if (!en.HasValue || en.Value <= st || e.End.Length <= 10) e.End = Fmt.IsoTime(st.AddHours(1)); if (e.Start.Length <= 10) e.Start = Fmt.IsoTime(st); }
+            }
+            if (Expanded == null) Expanded = new List<string>();
+            Expanded = Expanded.Where(id => id != null).Distinct().ToList();
+            if (Version < CurrentVersion) Version = CurrentVersion;
             if (Templates != null)
             {
                 Templates.RemoveAll(x => x == null || x.Task == null || string.IsNullOrWhiteSpace(x.Name));
@@ -112,6 +159,8 @@ namespace TealSuite.Tasks
                 if (t.DurationMin < 0) t.DurationMin = 0;
                 if (t.Due != null && !t.DueAt.HasValue) t.Due = null;
             }
+            var ids = new HashSet<string>(Tasks.Select(t => t.Id));
+            Expanded.RemoveAll(id => !ids.Contains(id));
         }
     }
 }

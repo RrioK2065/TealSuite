@@ -386,8 +386,12 @@ namespace TealSuite.Hub
             page = new AppSettingsPage(this, this.shortcuts);
             page.BackRequested += () => ShowList();
 
+            BuildHome();
+
             Controls.Add(listPanel);
             Controls.Add(empty);
+            Controls.Add(homePanel);
+            Controls.Add(tabBar);
             Controls.Add(notices);
             Controls.Add(page);
             Controls.Add(footer);
@@ -402,6 +406,8 @@ namespace TealSuite.Hub
 
             KeyPreview = true;
             KeyDown += (s, e) => { if (e.KeyCode == Keys.F5 && !page.Box_Focused()) { LoadManifest(); e.Handled = true; } };
+            Activated += (s, e) => { if (homePanel.Visible) RefreshHome(); };
+            FormClosed += (s, e) => StopWatching();
 
             WindowMemory.Attach(this, 860, 640);
             timer.Interval = 1500;
@@ -419,6 +425,8 @@ namespace TealSuite.Hub
                 if (page.Box_Focused()) page.CancelCapture(); else ShowList();
                 return true;
             }
+            if (!settingsShown && keyData == (Keys.Control | Keys.F)) { FocusSearch(); return true; }
+            if (!settingsShown && keyData == Keys.Escape && SearchActive && !SearchTags.Visible) { searchBox.Text = ""; ApplyView(); return true; }
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -437,10 +445,13 @@ namespace TealSuite.Hub
             catch (FileNotFoundException) { allApps = new List<AppEntry>(); apps = new List<AppEntry>(); error = "apps.json が見つかりません。\n" + path; }
             catch (Exception ex) { allApps = new List<AppEntry>(); apps = new List<AppEntry>(); error = "apps.json を読み込めませんでした。\n" + ex.Message; DataStore.Log("manifest: " + ex); }
             // 1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet) のショートカット・常駐・スタートアップを引き継ぐ (ショートカットを読む前に)
-            var renamed = HubMigration.Run(allApps);
-            if (renamed.Count > 0)
+            var migrated = HubMigration.Run(allApps);
+            if (migrated.Count > 0) RenameNotice = HubMigration.Notice(migrated);
+            // 1.10.0: お知らせは名前が変わった版で 1 回だけ (設定の引き継ぎがなくても、前の名前で使っていたら出す)
+            var renamed = HubMigration.PendingNotices(allApps, migrated, suiteVersion);
+            foreach (var m in migrated) if (!renamed.Contains(m)) renamed.Add(m);
+            if (renamed.Count > 0 && renamedText == null)
             {
-                RenameNotice = HubMigration.Notice(renamed);
                 // 名前が変わったアプリ (上のお知らせの「開く」ボタン用)
                 var newName = renamed[0].Substring(renamed[0].IndexOf(" → ", StringComparison.Ordinal) + 3);
                 var ra = allApps.FirstOrDefault(x => x.Name == newName);
@@ -479,6 +490,11 @@ namespace TealSuite.Hub
             RefreshStatus();
             if (shortcuts.Migrated) footer.StatusText = "1.5 までのショートカットの設定を引き継ぎました";
             if (RenameNotice != null) footer.StatusText = RenameNotice;
+            // 1.10.0: はじめて読んだときは「今日」から (Plan・Wallet・Memo のどれも無ければ「アプリ」)
+            if (!homeTabChosen) { homeTabChosen = true; viewTabs.SelectedIndex = HasHomeApps ? 0 : 1; }
+            ApplyView();
+            StartWatching();
+            RaiseDataChanged();
         }
 
         /// <summary>1.9.0: 名前が変わったアプリ (旧ID → 新ID)。apps.json の legacyIds から</summary>
@@ -505,7 +521,10 @@ namespace TealSuite.Hub
                 if (app == null) { footer.StatusText = appId + " は apps.json にありません"; return false; }
             }
             SuspendLayout();
+            // アプリの設定から戻ったら、そのアプリのカードが見えるように「アプリ」に切り替えておく
+            if (app != null && viewTabs.SelectedIndex != 1) { inApply = true; viewTabs.SelectedIndex = 1; inApply = false; }
             listPanel.Visible = false; empty.Visible = false; notices.Visible = false; selfBar.Visible = false;
+            homePanel.Visible = false; tabBar.Visible = false;
             page.ShowFor(app);
             page.Visible = true;
             settingsShown = true;
@@ -523,11 +542,269 @@ namespace TealSuite.Hub
             page.Visible = false;
             settingsShown = false;
             selfBar.Visible = true;
-            empty.Visible = cards.Count == 0;
-            listPanel.Visible = cards.Count > 0;
+            tabBar.Visible = true;
             notices.Visible = notices.Controls.Count > 0;
+            ApplyView();
             ResumeLayout();
             RefreshStatus();
+        }
+
+        // ---------- 1.10.0: 「今日」・検索 ----------
+
+        readonly Panel tabBar = new Panel();
+        readonly SegmentTabs viewTabs = new SegmentTabs("今日", "アプリ");
+        readonly TextBox searchBox = new TextBox();
+        InputFrame searchFrame;
+        readonly Panel homePanel = new Panel();
+        readonly Label homeTitle = new Label();
+        readonly HomeList homeList = new HomeList();
+        readonly Timer homeTimer = new Timer { Interval = 400 };
+        readonly Timer minuteTimer = new Timer { Interval = 60000 };
+        readonly Timer searchTimer = new Timer { Interval = 250 };
+        FileSystemWatcher watcher;
+        bool homeTabChosen, inApply;
+        DateTime homeDay;
+
+        public SegmentTabs ViewTabs { get { return viewTabs; } }
+        public TextBox SearchBox { get { return searchBox; } }
+        public HomeList HomeList_ { get { return homeList; } }
+        public string HomeTitle { get { return homeTitle.Text; } }
+        public bool IsHomeShown { get { return homePanel.Visible; } }
+        public bool SearchActive { get { return searchBox.Text.Trim().Length > 0; } }
+        public TagSuggest SearchTags { get; private set; }
+        /// <summary>「今日」のアプリ (Plan・Wallet・Memo) が 1 つでも入っているか</summary>
+        public bool HasHomeApps { get { return new[] { SuiteRead.PlanId, SuiteRead.WalletId, SuiteRead.MemoId }.Any(HasApp); } }
+        public bool HasApp(string appId) { return CardFor(appId) != null; }
+        /// <summary>テスト用: 項目を開く代わりに呼ぶ (appId, kind, key) → 戻り値</summary>
+        public Func<string, string, string, string> OpenItemHook;
+        /// <summary>データ (各アプリの JSON) が変わった・日付が変わった (通知領域の件数の更新用)</summary>
+        public event Action DataChanged;
+        /// <summary>見ているデータのフォルダ (テスト用)</summary>
+        public bool Watching { get { return watcher != null; } }
+
+        void BuildHome()
+        {
+            tabBar.Dock = DockStyle.Top; tabBar.BackColor = Theme.Surface;
+            tabBar.Height = viewTabs.Height + Theme.S(12);
+            tabBar.Paint += (s, e) => { using (var p = new Pen(Theme.Border)) e.Graphics.DrawLine(p, 0, tabBar.Height - 1, tabBar.Width, tabBar.Height - 1); };
+            viewTabs.Location = new Point(Theme.S(4), Theme.S(6));
+            viewTabs.Width = Theme.S(240);
+            viewTabs.SelectedChanged += (s, e) =>
+            {
+                if (inApply) return;
+                if (SearchActive) { inApply = true; searchBox.Text = ""; inApply = false; }
+                ApplyView();
+            };
+            tips.SetToolTip(viewTabs, "今日: 今日のタスク・予定・支払い・ピン留めのメモ\nアプリ: アプリの起動・終了・設定");
+            searchBox.Font = Theme.Body;
+            Ui.SetCue(searchBox, "検索 (メモ・タスク・サブスク・サイト名・#タグ)");
+            searchFrame = new InputFrame(searchBox) { Width = Theme.S(300) };
+            tabBar.Controls.Add(viewTabs);
+            tabBar.Controls.Add(searchFrame);
+            tabBar.Layout += (s, e) =>
+            {
+                searchFrame.Width = Math.Max(Theme.S(160), Math.Min(Theme.S(320), tabBar.Width - viewTabs.Right - Theme.S(24)));
+                searchFrame.Location = new Point(tabBar.Width - searchFrame.Width - Theme.Pad, (tabBar.Height - searchFrame.Height) / 2);
+                viewTabs.Top = (tabBar.Height - viewTabs.Height) / 2;
+            };
+            tips.SetToolTip(searchBox, "Teal Memo・Teal Plan・Teal Wallet と、Teal Pass のサイト名をまとめて探します (Ctrl+F)。\n「#買い物」のように # から始めると、Memo と Plan のタグで探します。\nTeal Clip の履歴と、パスワード・ID・メモの中身は探しません");
+            // # のあとに Memo・Plan のタグの候補を出す (Enter・Tab で入れる)
+            SearchTags = TagSuggest.Attach(searchBox, () => SuiteTags.Collect(null, null), true);
+            searchBox.TextChanged += (s, e) => { if (inApply) return; searchTimer.Stop(); searchTimer.Start(); };
+            searchTimer.Tick += (s, e) => { searchTimer.Stop(); ApplyView(); };
+            searchBox.KeyDown += (s, e) =>
+            {
+                if (e.Handled) return;
+                if (e.KeyCode == Keys.Escape) { searchBox.Text = ""; ApplyView(); e.Handled = e.SuppressKeyPress = true; }
+                else if (e.KeyCode == Keys.Enter) { searchTimer.Stop(); ApplyView(); if (homeList.Current != null) OpenHomeItem(homeList.Current); e.Handled = e.SuppressKeyPress = true; }
+                else if (e.KeyCode == Keys.Down) { searchTimer.Stop(); ApplyView(); homeList.Focus(); e.Handled = e.SuppressKeyPress = true; }
+            };
+
+            homePanel.Dock = DockStyle.Fill; homePanel.BackColor = Theme.Background;
+            homePanel.Padding = Theme.P(Theme.Pad, Theme.Pad - 4, Theme.Pad, Theme.Pad);
+            homeTitle.Dock = DockStyle.Top; homeTitle.Font = Theme.Header; homeTitle.ForeColor = Theme.Text; homeTitle.UseMnemonic = false;
+            homeTitle.AutoSize = false; homeTitle.Height = Theme.Header.Height + Theme.S(12); homeTitle.TextAlign = ContentAlignment.MiddleLeft;
+            var card = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = Theme.P(4, 2, 4, 4) };
+            card.Paint += (s, e) => { using (var p = new Pen(Theme.Border)) e.Graphics.DrawRectangle(p, 0, 0, card.Width - 1, card.Height - 1); };
+            homeList.Dock = DockStyle.Fill;
+            card.Controls.Add(homeList);
+            homePanel.Controls.Add(card);
+            homePanel.Controls.Add(homeTitle);
+            homePanel.Visible = false;
+            // 「今日」は 1 回のクリックで開く。検索の結果はダブルクリック (どちらも Enter で開ける)
+            homeList.MouseClick += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left || SearchActive) return;
+                int i = homeList.IndexFromPoint(e.Location);
+                if (i >= 0 && i < homeList.Items.Count) OpenHomeItem(homeList.Items[i] as HomeItem);
+            };
+            homeList.MouseDoubleClick += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left || !SearchActive) return;
+                int i = homeList.IndexFromPoint(e.Location);
+                if (i >= 0 && i < homeList.Items.Count) OpenHomeItem(homeList.Items[i] as HomeItem);
+            };
+            homeList.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter && homeList.Current != null) { OpenHomeItem(homeList.Current); e.Handled = e.SuppressKeyPress = true; }
+                else if (e.KeyCode == Keys.Up && homeList.SelectedIndex <= FirstOpenable() && SearchActive) { searchBox.Focus(); e.Handled = true; }
+            };
+            homeTimer.Tick += (s, e) => { homeTimer.Stop(); OnDataChanged(); };
+            // 1 分ごと: 見張りが始められなかったとき (データのフォルダがまだない等) は、ここでやり直す
+            minuteTimer.Tick += (s, e) => { if (watcher == null && !closing) StartWatching(); OnDataChanged(); };
+            minuteTimer.Start();
+        }
+
+        int FirstOpenable()
+        {
+            for (int i = 0; i < homeList.Items.Count; i++) { var it = homeList.Items[i] as HomeItem; if (it != null && !it.Header && !it.Empty) return i; }
+            return -1;
+        }
+
+        public void FocusSearch()
+        {
+            if (settingsShown) ShowList();
+            searchBox.Focus(); searchBox.SelectAll();
+        }
+
+        /// <summary>選んでいるタブ・検索の文字に合わせて、アプリの一覧か「今日」・検索の結果を出す</summary>
+        public void ApplyView()
+        {
+            if (settingsShown) return;
+            bool apps = !SearchActive && viewTabs.SelectedIndex == 1;
+            SuspendLayout();
+            listPanel.Visible = apps && cards.Count > 0;
+            empty.Visible = apps && cards.Count == 0;
+            homePanel.Visible = !apps;
+            ResumeLayout();
+            if (!apps) RefreshHome();
+        }
+
+        /// <summary>「今日」・検索の結果を読み直す (表示していなくても中身は作る。テストからも呼ぶ)</summary>
+        public void RefreshHome()
+        {
+            var now = Now();
+            homeDay = now.Date;
+            List<HomeItem> rows;
+            var keep = homeList.Current;
+            if (SearchActive)
+            {
+                var q = searchBox.Text.Trim();
+                rows = HubSearch.Run(q, now, HasApp);
+                int n = rows.Count(r => r.Openable);
+                homeTitle.Text = n > 0 ? "「" + q + "」 " + n + " 件" : "「" + q + "」";
+                homeList.EmptyText = HubSearch.IsTag(q) ? "このタグのメモ・タスク・予定は見つかりませんでした。" : "見つかりませんでした。\n探せるのは Teal Memo・Teal Plan・Teal Wallet と、Teal Pass のサイト名です。";
+            }
+            else
+            {
+                int[] counts;
+                rows = HubToday.Build(now, HasApp, out counts);
+                homeTitle.Text = now.Month + "月" + now.Day + "日 (" + Fmt.DayOfWeek(now) + ") の今日";
+                homeList.EmptyText = "Teal Plan・Teal Wallet・Teal Memo が入っていると、今日のタスク・支払い・メモがここに出ます。";
+            }
+            homeList.SetItems(rows, o => { var it = o as HomeItem; return keep != null && it != null && it.Openable && it.AppId == keep.AppId && it.Kind == keep.Kind && it.Key == keep.Key; });
+            if (keep == null || homeList.Current == null) homeList.SelectFirst();
+        }
+
+        void OnDataChanged()
+        {
+            if (IsDisposed) return;
+            if (homePanel.Visible && Visible && WindowState != FormWindowState.Minimized) RefreshHome();
+            else if (homeDay != Now().Date && homePanel.Visible) RefreshHome();
+            RaiseDataChanged();
+        }
+
+        void RaiseDataChanged() { if (DataChanged != null) try { DataChanged(); } catch (Exception ex) { DataStore.Log("data changed: " + ex.Message); } }
+
+        /// <summary>各アプリのデータのフォルダを見張る (変わったら少し待って「今日」・検索を読み直す)</summary>
+        void StartWatching()
+        {
+            if (watcher != null || closing) return;
+            try
+            {
+                var root = DataStore.Root;
+                if (!Directory.Exists(root)) return;
+                watcher = new FileSystemWatcher(root) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size };
+                FileSystemEventHandler h = (s, e) => Poke(e.FullPath);
+                watcher.Changed += h; watcher.Created += h; watcher.Deleted += h;
+                watcher.Renamed += (s, e) => Poke(e.FullPath);
+                watcher.EnableRaisingEvents = true;
+            }
+            catch (Exception ex) { DataStore.Log("watch: " + ex.Message); DisposeWatcher(); }
+        }
+
+        bool closing;
+
+        /// <summary>終わるとき: 見張りと 1 分のタイマーを止める (このあとは始め直さない)</summary>
+        void StopWatching()
+        {
+            closing = true;
+            minuteTimer.Stop(); homeTimer.Stop();
+            DisposeWatcher();
+        }
+
+        void DisposeWatcher()
+        {
+            if (watcher == null) return;
+            try { watcher.EnableRaisingEvents = false; watcher.Dispose(); } catch { }
+            watcher = null;
+        }
+
+        /// <summary>見るべきファイルか (各アプリの .json と Teal Pass のサイト名の索引。Teal Hub 自身と Teal Clip は見ない)</summary>
+        public static bool IsWatchedFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            var name = Path.GetFileName(path);
+            var dir = Path.GetFileName(Path.GetDirectoryName(path) ?? "");
+            if (string.Equals(dir, Program.Id, StringComparison.OrdinalIgnoreCase) || string.Equals(dir, "TealClip", StringComparison.OrdinalIgnoreCase)) return false;
+            if (string.Equals(name, OpenRequest.FileName, StringComparison.OrdinalIgnoreCase)) return false;
+            return name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || string.Equals(name, PassSites.FileName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        void Poke(string path)
+        {
+            if (!IsWatchedFile(path) || IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke((Action)(() => { if (!IsDisposed) { homeTimer.Stop(); homeTimer.Start(); } })); } catch { }
+        }
+
+        /// <summary>「今日」・検索の行を開く (見出しの行・予算の行はそのアプリを開くだけ)</summary>
+        public string OpenHomeItem(HomeItem it)
+        {
+            if (it == null || it.Empty || it.AppId == null) return "none";
+            if (it.Header || it.Kind == "budget" || string.IsNullOrEmpty(it.Key))
+            {
+                if (OpenItemHook != null) return OpenItemHook(it.AppId, null, null);
+                if (CardFor(it.AppId) == null) return "missing";
+                OpenApp(it.AppId);
+                return "app";
+            }
+            return OpenItem(it.AppId, it.Kind, it.Key);
+        }
+
+        /// <summary>
+        /// アプリにその項目を開いてもらう。起動中なら合図して頼む。起動していなければ起動する (起動したアプリが頼みごとを読む)。
+        /// 戻り値: "open" / "start" / "show" (古い版で、前面に出すだけ) / "missing" / "error"
+        /// </summary>
+        public string OpenItem(string appId, string kind, string key)
+        {
+            if (OpenItemHook != null) return OpenItemHook(appId, kind, key);
+            var card = CardFor(appId);
+            if (card == null) { footer.StatusText = appId + " は入っていません"; return "missing"; }
+            if (!OpenRequest.Write(card.App.Id, kind, key)) { footer.StatusText = card.App.Name + " に頼めませんでした"; return "error"; }
+            try { if (AppInfo.IsWindows) Native.AllowSetForegroundWindow(-1); } catch { }
+            if (OpenRequest.Notify(card.App.Id)) { footer.StatusText = card.App.Name + " で開きました"; return "open"; }
+            RefreshStatus();
+            if (card.Pids.Count > 0)
+            {
+                // 起動しているのに合図に応えない (古い版など) → 前面に出すだけ
+                OpenRequest.Discard(card.App.Id);
+                StartOrShow(card, null);
+                return "show";
+            }
+            if (!File.Exists(card.App.ExePath)) { OpenRequest.Discard(card.App.Id); footer.StatusText = card.App.Name + " が見つかりません"; return "missing"; }
+            if (StartOrShow(card, null)) return "start";
+            OpenRequest.Discard(card.App.Id);
+            return "error";
         }
 
         // ---------- スタートアップ・常駐 ----------
@@ -699,7 +976,7 @@ namespace TealSuite.Hub
                 list.Add(Tuple.Create("self", "Teal Hub のスタートアップの登録先が違います。\n登録先: " + selfState.RegisteredPath, "この場所で登録し直す", (Action)(() => SetSelfStartup(true))));
             else if (!selfState.Registered && AnyAppStartupOn && !dismissed.Contains("selfoff"))
                 list.Add(Tuple.Create("selfoff", "Teal Hub のスタートアップがオフです。Windows の起動後、Teal Hub を開くまでショートカットは使えません。", "Teal Hub も登録する", (Action)(() => SetSelfStartup(true))));
-            // 1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet) のお知らせ (閉じるまで出す。次に起動したときは出ない)
+            // 1.9.0: 名前が変わったアプリ (Teal Sub → Teal Wallet、1.10.0: Teal Tasks → Teal Plan) のお知らせ (閉じるまで出す。次に起動したときは出ない)
             if (renamedText != null && !dismissed.Contains("rename"))
             {
                 var rid = renamedAppId;

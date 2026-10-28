@@ -242,7 +242,7 @@ static class V180Tests
     // ---------------------------------------------------------------- タスク
     public static void RunTasks(Action<bool, string> Check)
     {
-        TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
+        TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "");
         var now = new DateTime(2026, 10, 30, 10, 0, 0); // 金曜
         Check(T.TaskLogic.NextDue(D(2026, 10, 30), T.Repeat.Weekdays, now.Date) == D(2026, 11, 2), "平日: 金曜の次は月曜");
         Check(T.TaskLogic.NextDue(D(2026, 10, 27), T.Repeat.Weekdays, now.Date) == D(2026, 11, 2), "平日: たまった分は飛ばす");
@@ -306,7 +306,7 @@ static class V180Tests
 
     public static void RunTasksUi(Action<bool, string> Check)
     {
-        TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
+        TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "");
         var now = new DateTime(2026, 10, 27, 10, 0, 0);
         using (var f = new T.MainForm())
         {

@@ -4,3 +4,6 @@
 # 1.9.0: Teal Sub → Teal Wallet
 apps/TealSub/TealSub.exe
 apps/TealSub/TealSub.ico
+# 1.10.0: Teal Tasks → Teal Plan
+apps/TealTasks/TealTasks.exe
+apps/TealTasks/TealTasks.ico

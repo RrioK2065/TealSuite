@@ -57,68 +57,28 @@ namespace TealSuite.Wallet
 
         // ---------------------------------------------------------------- 更新日
 
+        // 1.10.0: 計算は共通の Renewal (src/Common/Recurrence.cs) に移した。Teal Plan のカレンダー・Teal Hub の「今日」と同じ答えになる
+        static BillCycle CycleOf(Subscription s) { return (BillCycle)(int)s.Cycle; }
+
         /// <summary>課金の起点。無料期間があれば、その終わりの日が最初の支払い日</summary>
-        public static DateTime Anchor(Subscription s)
-        {
-            var start = (s.StartDate ?? DateTime.Today).Date;
-            var t = s.TrialEndDate;
-            if (t.HasValue && t.Value.Date > start) return t.Value.Date;
-            return start;
-        }
+        public static DateTime Anchor(Subscription s) { return Renewal.Anchor(s.StartDate, s.TrialEndDate, DateTime.Today); }
 
         /// <summary>起点から k 回目の支払い日 (月末の契約は、短い月では月末に合わせる)</summary>
-        public static DateTime Nth(Subscription s, DateTime anchor, int k)
-        {
-            switch (s.Cycle)
-            {
-                case Cycle.Yearly: return anchor.AddYears(k);
-                case Cycle.Weekly: return anchor.AddDays(7 * k);
-                case Cycle.EveryNMonths: return anchor.AddMonths(Math.Max(1, s.CycleMonths) * k);
-                default: return anchor.AddMonths(k);
-            }
-        }
+        public static DateTime Nth(Subscription s, DateTime anchor, int k) { return Renewal.Nth(CycleOf(s), s.CycleMonths, anchor, k); }
 
         /// <summary>today 以降で最初の支払い日。解約済みなら null</summary>
         public static DateTime? NextRenewal(Subscription s, DateTime today)
         {
             if (s.Status == SubStatus.Cancelled) return null;
-            today = today.Date;
-            var anchor = Anchor(s);
-            if (anchor >= today) return anchor;
-            // おおよその回数から始めて、today 以上になるまで進める
-            int k;
-            switch (s.Cycle)
-            {
-                case Cycle.Weekly: k = (int)((today - anchor).TotalDays / 7); break;
-                case Cycle.Yearly: k = today.Year - anchor.Year - 1; break;
-                case Cycle.EveryNMonths: k = ((today.Year - anchor.Year) * 12 + today.Month - anchor.Month) / Math.Max(1, s.CycleMonths) - 1; break;
-                default: k = (today.Year - anchor.Year) * 12 + today.Month - anchor.Month - 1; break;
-            }
-            k = Math.Max(0, k);
-            var d = Nth(s, anchor, k);
-            while (d < today) { k++; d = Nth(s, anchor, k); }
-            return d;
+            return Renewal.Next(CycleOf(s), s.CycleMonths, Anchor(s), today);
         }
 
-        public static bool InTrial(Subscription s, DateTime today)
-        {
-            var t = s.TrialEndDate;
-            return t.HasValue && t.Value.Date > today.Date && (s.StartDate ?? today) <= today;
-        }
+        public static bool InTrial(Subscription s, DateTime today) { return Renewal.InTrial(s.StartDate, s.TrialEndDate, today); }
 
         // ---------------------------------------------------------------- 金額
 
         /// <summary>1 か月あたりの金額 (毎週は 52 週 / 12 か月で換算)</summary>
-        public static decimal MonthlyCost(Subscription s)
-        {
-            switch (s.Cycle)
-            {
-                case Cycle.Yearly: return s.Amount / 12m;
-                case Cycle.Weekly: return s.Amount * 52m / 12m;
-                case Cycle.EveryNMonths: return s.Amount / (decimal)Math.Max(1, s.CycleMonths);
-                default: return s.Amount;
-            }
-        }
+        public static decimal MonthlyCost(Subscription s) { return Renewal.MonthlyCost(s.Amount, CycleOf(s), s.CycleMonths); }
         /// <summary>1 年あたりの金額</summary>
         public static decimal YearlyCost(Subscription s)
         {

@@ -161,6 +161,32 @@ def g_tasks(d):
         d.ellipse([x - 39, y - 39, x + 39, y + 39], fill=0)
 
 
+def g_plan(d):
+    # カレンダー (日のマス + チェック) + 右下に時計 = タスクと予定
+    d.rounded_rectangle([196, 250, 744, 774], radius=72, fill=255)
+    d.rectangle([196, 384, 744, 412], fill=0)
+    for x in (334, 606):
+        d.rounded_rectangle([x - 34, 186, x + 34, 318], radius=34, fill=0)
+        d.rounded_rectangle([x - 20, 196, x + 20, 308], radius=20, fill=255)
+    # 日のマス (2 行 x 3 列。左上はチェック)
+    for row, y in enumerate((470, 600)):
+        for col, x in enumerate((262, 392, 522)):
+            if row == 0 and col == 0:
+                continue
+            d.rounded_rectangle([x, y, x + 84, y + 84], radius=20, fill=0)
+    d.line([(262, 512), (298, 548), (350, 482)], fill=0, width=34, joint="curve")
+    for x, y in ((262, 512), (350, 482)):
+        d.ellipse([x - 17, y - 17, x + 17, y + 17], fill=0)
+    # 時計 (まわりを切り抜いて重ねる)
+    cx, cy = 700, 700
+    d.ellipse([cx - 236, cy - 236, cx + 236, cy + 236], fill=0)
+    d.ellipse([cx - 196, cy - 196, cx + 196, cy + 196], fill=255)
+    d.line([(cx, cy), (cx, cy - 128)], fill=0, width=44)
+    d.line([(cx, cy), (cx + 96, cy + 52)], fill=0, width=44)
+    for x, y in ((cx, cy - 128), (cx + 96, cy + 52), (cx, cy)):
+        d.ellipse([x - 22, y - 22, x + 22, y + 22], fill=0)
+
+
 GLYPHS = {
     "TealHub": g_appmanager,
     "TealPass": g_password,
@@ -169,7 +195,7 @@ GLYPHS = {
     "TealVolume": g_volume,
     "TealUpdater": g_updater,
     "TealWallet": g_wallet,
-    "TealTasks": g_tasks,
+    "TealPlan": g_plan,
 }
 
 

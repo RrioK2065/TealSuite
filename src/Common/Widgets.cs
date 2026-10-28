@@ -1,4 +1,4 @@
-// TealSuite 共通: 画面づくりの小物 (1.7.0 から。Teal Wallet・Teal Tasks で使う)
+// TealSuite 共通: 画面づくりの小物 (1.7.0 から。Teal Wallet・Teal Plan で使う)
 //  - Lay        … Dock=Top で上から順に積む・入力欄 + ボタンの 1 行・小見出し
 //  - SegmentTabs … 画面の切り替えタブ (キーボードの ←→ / Ctrl+1〜9 でも切り替え)
 //  - Fmt        … 金額・日付・時間の日本語表記
@@ -439,6 +439,20 @@ namespace TealSuite.Common
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
         }
         public object Selected { get { return SelectedItem; } }
+        Func<object, int> rowHeight;
+        /// <summary>1.10.0: 行ごとに高さを変える (項目 → 高さ px。255 まで)。ハンドルを作る前に入れる</summary>
+        public Func<object, int> RowHeight
+        {
+            get { return rowHeight; }
+            set { rowHeight = value; DrawMode = value == null ? DrawMode.OwnerDrawFixed : DrawMode.OwnerDrawVariable; }
+        }
+        /// <summary>1.10.0: true の行は区切り線と選択の色を描かない (見出しの行など)</summary>
+        public Func<object, bool> PlainRow;
+        protected override void OnMeasureItem(MeasureItemEventArgs e)
+        {
+            base.OnMeasureItem(e);
+            if (rowHeight != null && e.Index >= 0 && e.Index < Items.Count) e.ItemHeight = Math.Max(1, Math.Min(255, rowHeight(Items[e.Index])));
+        }
         /// <summary>
         /// 表示されたとき・大きさが変わったとき: 選んでいる行が一番上から見える範囲にあれば一番上から見せる
         /// (mono などで、先に選んだ行まで勝手に送られて先頭の行が隠れることがあるため)
@@ -476,9 +490,11 @@ namespace TealSuite.Common
             if (e.Index < 0 || e.Index >= Items.Count) return;
             var g = e.Graphics;
             bool sel = (e.State & DrawItemState.Selected) != 0;
+            bool plain = PlainRow != null && PlainRow(Items[e.Index]);
+            if (plain) sel = false;
             using (var b = new SolidBrush(sel ? Theme.AccentSoft : Theme.Surface)) g.FillRectangle(b, e.Bounds);
             if (sel) using (var b = new SolidBrush(Theme.Accent)) g.FillRectangle(b, e.Bounds.X, e.Bounds.Y, Theme.S(3), e.Bounds.Height);
-            using (var p = new Pen(Theme.Border)) g.DrawLine(p, e.Bounds.X + Theme.S(10), e.Bounds.Bottom - 1, e.Bounds.Right - Theme.S(10), e.Bounds.Bottom - 1);
+            if (!plain) using (var p = new Pen(Theme.Border)) g.DrawLine(p, e.Bounds.X + Theme.S(10), e.Bounds.Bottom - 1, e.Bounds.Right - Theme.S(10), e.Bounds.Bottom - 1);
             if (PaintRow != null)
             {
                 var st = g.Save();

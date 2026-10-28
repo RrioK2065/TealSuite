@@ -55,6 +55,8 @@ namespace TealSuite.Hub
             if (r.StartsWith(".update-staging/", StringComparison.OrdinalIgnoreCase)) return true;
             if (r.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) || r.EndsWith(".lock", StringComparison.OrdinalIgnoreCase)) return true;
             if (string.Equals(r, Marker, StringComparison.OrdinalIgnoreCase)) return true;
+            // 1.10.0: Teal Pass のサイト名の索引は、Teal Pass が起動したときに作り直すので入れない
+            if (string.Equals(r, "TealPass/site-index.dat", StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
 

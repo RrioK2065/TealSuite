@@ -20,6 +20,8 @@ $ErrorActionPreference = "Stop"
 $Suite = (Resolve-Path $Suite).Path
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $Suite "apps.json") | ConvertFrom-Json
 Write-Host "起動のチェック: $Suite (v$($manifest.suiteVersion))"
+# 名前が変わる前のアプリ (1.9.0: TealSub → TealWallet、1.10.0: TealTasks → TealPlan) が一覧に残っていないか
+foreach ($old in @("TealSub", "TealTasks")) { if ($manifest.apps | Where-Object { $_.id -eq $old }) { Write-Bad "apps.json に $old が残っています" } }
 
 $targets = @(@{ id = "TealHub"; exe = "TealHub.exe"; args = "" })
 foreach ($a in $manifest.apps) {

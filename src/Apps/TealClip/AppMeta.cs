@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Clip - コピー履歴")]
 [assembly: AssemblyDescription("コピーした文字を10件まで記録して呼び出す")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.9.1.0")]
-[assembly: AssemblyFileVersion("1.9.1.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace TealSuite.Clip
 {

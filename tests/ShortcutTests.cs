@@ -316,6 +316,9 @@ static class ShortcutTests
             mgr.SimulatePress(mgr.Self);
             Check(f.Visible && !f.IsSettingsShown, "後ろにあれば前面に出す (一覧の画面)");
 
+            // 1.10.0: はじめは「今日」。カードは「アプリ」のタブで出す
+            Check(f.ViewTabs.SelectedIndex == 0 && f.IsHomeShown && !f.CardFor("TealClip").Visible, "はじめは「今日」の画面 (アプリのカードは「アプリ」のタブ)");
+            f.ViewTabs.SelectedIndex = 1;
             // カード: 設定の要約と「設定」ボタン
             var clipCard = f.CardFor("TealClip"); var passCard = f.CardFor("TealPass"); var volCard = f.CardFor("TealVolume");
             Check(f.Cards.Count == 6 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "6 つのカードすべてに「設定」ボタン");
@@ -328,7 +331,7 @@ static class ShortcutTests
             clipCard.BtnSettings.PerformClick();
             var page = f.SettingsPage;
             Check(f.IsSettingsShown && page.AppId == "TealClip" && !passCard.Visible, "「設定」を押すと画面が Teal Clip の設定ページに切り替わる");
-            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.9.1"), "見出し: " + page.TitleText + " / " + page.SubText);
+            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.10.0"), "見出し: " + page.TitleText + " / " + page.SubText);
             Check(page.StatusText.Contains("Ctrl + Shift + V") && page.Box.Value.ToString() == "Ctrl+Shift+V", "ショートカット欄に今のキー (" + page.StatusText + ")");
             Check(page.ResidentSwitch.Checked && page.ResidentSwitch.Enabled && page.StartupSwitch.Enabled && !page.StartupSwitch.Checked, "常駐はオン、スタートアップは選べる (今はオフ)");
             Check(page.ResidentNoteText.Contains("記録を続けます"), "Teal Clip は常駐の意味を説明");

@@ -1,4 +1,4 @@
-// Teal Tasks - 日本語のひとこと入力を読み取る ("明日15時 歯医者 #病院" → 期限・時刻・タグ・タイトル)
+// Teal Plan - 日本語のひとこと入力を読み取る ("明日15時 歯医者 #病院" → 期限・時刻・タグ・タイトル)
 // 読み取れる言い方 (全角数字も可):
 //   日付: 今日 / 本日 / 明日 / あした / 明後日 / あさって / N日後 / 今週・来週・再来週 + X曜(日) / X曜(日) / M/D / M月D日 / 今夜・今晩
 //   時刻: H時 / H時半 / H時M分 / H:MM / 午前・午後・朝・夜・夕方 + 時刻   (前に何も付かない 1〜6 時は午後とみなす)
@@ -6,6 +6,9 @@
 //   優先度: 重要 / 急ぎ / 至急 / 大事 → 高、 優先度高・中・低 / いつか / 余裕があれば → 低
 //   くり返し: 毎日 / 毎週 / 毎月 (毎週X曜 なら最初の回は次の X 曜日)
 //   タグ: #仕事 / ＃家
+//   予定 (1.10.0): 時刻の範囲 15:00-16:00 / 15時〜16時 / 9時から17時まで、 場所 @駅前 / ＠駅前、
+//                  日付の範囲 11/3-11/5 / 11/3〜5 / 明日から2日間、 終日、 先頭の「予定」
+//                  → どれかがあれば予定 (IsEvent)。無ければ今までどおりタスク
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -26,6 +29,15 @@ namespace TealSuite.Tasks
         public int DurationMin;
         public Repeat Repeat = Repeat.None;
         public List<string> Tags = new List<string>();
+        /// <summary>1.10.0: 終わりの時刻 (Date に足す。日をまたぐと 24 時間以上)</summary>
+        public TimeSpan? EndTime;
+        /// <summary>1.10.0: 終わりの日 (その日を含む)</summary>
+        public DateTime? EndDate;
+        public string Location;
+        /// <summary>「終日」と書いてあった</summary>
+        public bool AllDay;
+        /// <summary>予定として入れる (時刻の範囲・場所・日付の範囲・終日・先頭の「予定」のどれかがある)</summary>
+        public bool IsEvent;
 
         public bool HasTime { get { return Time.HasValue; } }
         public DateTime? Due { get { return Date.HasValue ? Date.Value.Date + (Time ?? TimeSpan.Zero) : (DateTime?)null; } }
@@ -37,9 +49,40 @@ namespace TealSuite.Tasks
             return t;
         }
 
+        /// <summary>予定として作る (日付が無ければ今日。時刻の終わりが無ければ「かかる時間」か 1 時間)</summary>
+        public EventItem ToEvent(DateTime now, int remindMin = 10)
+        {
+            var e = new EventItem { Title = Title, Location = Location, Tags = new List<string>(Tags), Repeat = Repeat, Created = Fmt.IsoTime(now) };
+            var day = (Date ?? now.Date).Date;
+            if (Time.HasValue && !AllDay)
+            {
+                var start = day + Time.Value;
+                DateTime end;
+                if (EndDate.HasValue) end = EndDate.Value.Date + (EndTime ?? Time.Value);
+                else if (EndTime.HasValue) end = day + EndTime.Value;
+                else end = start.AddMinutes(DurationMin > 0 ? DurationMin : 60);
+                if (end <= start) end = start.AddHours(1);
+                e.SetTimes(start, end, false);
+                e.RemindMin = remindMin;
+            }
+            else e.SetTimes(day, EndDate ?? day, true);
+            return e;
+        }
+
         /// <summary>読み取った内容の説明 (入力欄の下に出す)</summary>
         public string Describe(DateTime now)
         {
+            if (IsEvent)
+            {
+                var ev = ToEvent(now);
+                var it = EventLogic.ToItem(ev, ev.StartAt);
+                var ps = new List<string>();
+                ps.Add(Fmt.Relative(ev.StartAt.Date, now) + " " + (ev.AllDay ? EventLogic.WhenText(ev) : Fmt.MonthDay(ev.StartAt) + " " + EventLogic.TimeText(it)));
+                if (!string.IsNullOrEmpty(Location)) ps.Add("@" + Location);
+                if (Repeat != Repeat.None) ps.Add(TaskLogic.RepeatLabel(Repeat));
+                foreach (var tg in Tags) ps.Add("#" + tg);
+                return "予定「" + (Title.Length > 0 ? Title : "(タイトルなし)") + "」  " + string.Join("  ・  ", ps);
+            }
             var parts = new List<string>();
             if (Date.HasValue) parts.Add("期限 " + Fmt.Relative(Date.Value, now) + " " + Fmt.MonthDay(Date.Value) + (HasTime ? " " + Fmt.Time(Due.Value) : ""));
             else parts.Add("期限なし");
@@ -63,6 +106,15 @@ namespace TealSuite.Tasks
             string s = " " + Normalize(input) + " ";
             var today = now.Date;
             Match m;
+
+            // 予定の印 (先頭の「予定」・終日・場所)
+            s = Take(s, @"^\s予定(?::|\s)", x => r.IsEvent = true);
+            s = Take(s, @"終日", x => r.AllDay = true);
+            s = Take(s, @"(?<=\s)@([^\s#@]+)", x =>
+            {
+                var place = Regex.Replace(x.Groups[1].Value, "(にて|で)$", "", O);
+                if (place.Length > 0) r.Location = place;
+            });
 
             // タグ
             s = Take(s, @"#([^\s#]+)", x => r.Tags.Add(x.Groups[1].Value));
@@ -90,8 +142,42 @@ namespace TealSuite.Tasks
                 r.DurationMin = min;
             });
 
+            // 時刻の範囲 (15:00-16:00 / 15時〜16時半 / 9時から17時まで / 15-16時)
+            const string T = @"(午前|午後|朝|昼|夕方|夜)?\s*(\d{1,2})(?::(\d{2})|(時)(?:(半)|(\d{1,2})分)?)?";
+            m = Regex.Match(s, @"(?<![\d/:.])" + T + @"\s*(?:-|〜|~|から)\s*" + T + @"(?:まで)?(?![\d/]|間|日)", O);
+            while (m.Success)
+            {
+                bool firstMarked = m.Groups[3].Success || m.Groups[4].Success, secondMarked = m.Groups[9].Success || m.Groups[10].Success;
+                int h1 = int.Parse(m.Groups[2].Value), h2 = int.Parse(m.Groups[8].Value);
+                if ((firstMarked || secondMarked) && h1 <= 24 && h2 <= 30)
+                {
+                    int m1 = m.Groups[5].Success ? 30 : m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : m.Groups[6].Success ? int.Parse(m.Groups[6].Value) : 0;
+                    int m2 = m.Groups[11].Success ? 30 : m.Groups[9].Success ? int.Parse(m.Groups[9].Value) : m.Groups[12].Success ? int.Parse(m.Groups[12].Value) : 0;
+                    if (m1 > 59) m1 = 0;
+                    if (m2 > 59) m2 = 0;
+                    var start = new TimeSpan(Hour24(h1, m.Groups[1].Value), m1, 0);
+                    string ap2 = m.Groups[7].Value;
+                    TimeSpan end;
+                    if (ap2.Length > 0) end = new TimeSpan(Hour24(h2, ap2), m2, 0);
+                    else
+                    {
+                        // 前置きが無ければ、始まりより後になる一番近い時刻 (11時-1時 → 13:00、22:00-1:00 → 翌 1:00)
+                        end = new TimeSpan(h2, m2, 0);
+                        if (end <= start && h2 < 12) end = end.Add(TimeSpan.FromHours(12));
+                        if (end <= start) end = new TimeSpan(h2, m2, 0).Add(TimeSpan.FromHours(24));
+                    }
+                    if (end <= start) end = end.Add(TimeSpan.FromHours(24));
+                    r.Time = start; r.EndTime = end; r.IsEvent = true;
+                    s = s.Remove(m.Index, m.Length).Insert(m.Index, Mark);
+                    break;
+                }
+                m = m.NextMatch();
+            }
+
             // 時刻
             int? hour = null, minute = null; string ampm = null;
+            if (!r.Time.HasValue)
+            {
             m = Regex.Match(s, @"(午前|午後|朝|昼|夕方|夜|今夜|今晩)?\s*(\d{1,2})[:時](半|(\d{1,2})分?)?(?:から|に|〜|~)?", O);
             while (m.Success)
             {
@@ -111,17 +197,8 @@ namespace TealSuite.Tasks
                 }
                 m = m.NextMatch();
             }
-            if (hour.HasValue)
-            {
-                int h = hour.Value;
-                bool pm = ampm == "午後" || ampm == "夕方" || ampm == "夜" || ampm == "今夜" || ampm == "今晩";
-                if (pm && h < 12) h += 12;
-                else if (ampm == "昼" && h < 6) h += 12;
-                else if (ampm == "午前" && h == 12) h = 0;
-                else if (string.IsNullOrEmpty(ampm) && h >= 1 && h <= 6) h += 12; // 「3時」はたいてい午後
-                if (h == 24) h = 0;
-                r.Time = new TimeSpan(h, minute ?? 0, 0);
             }
+            if (hour.HasValue) r.Time = new TimeSpan(Hour24(hour.Value, ampm), minute ?? 0, 0);
 
             // かかる時間 (分)
             s = Take(s, @"(?:約|およそ|〜|~)?(\d+)分(?:間)?(?:くらい|ほど|程度|かかる)?", x => r.DurationMin += int.Parse(x.Groups[1].Value));
@@ -133,6 +210,8 @@ namespace TealSuite.Tasks
             s = Take(s, @"(明後日|あさって)", x => date = today.AddDays(2));
             s = Take(s, @"(明日|あした|あす)", x => date = today.AddDays(1));
             s = Take(s, @"(\d+)日後", x => date = today.AddDays(int.Parse(x.Groups[1].Value)));
+            int days = 0;
+            s = Take(s, @"(\d+)日間", x => { days = int.Parse(x.Groups[1].Value); r.IsEvent = true; });
             s = Take(s, @"(\d+)週間後", x => date = today.AddDays(7 * int.Parse(x.Groups[1].Value)));
             s = Take(s, @"(今週|来週|再来週)?\s*の?\s*([日月火水木金土])曜(?:日)?", x =>
             {
@@ -150,6 +229,21 @@ namespace TealSuite.Tasks
                     date = today.AddDays(diff); // 今日がその曜日なら今日
                 }
             });
+            // 日付の範囲 (11/3-11/5 / 11/3〜5 / 11月3日から5日まで)
+            s = Take(s, @"(?<![\d/])(?:(\d{4})[/年])?(\d{1,2})[/月](\d{1,2})日?(?:\([日月火水木金土]\))?\s*(?:-|〜|~|から)\s*(?:(\d{1,2})[/月])?(\d{1,2})日?(?:\([日月火水木金土]\))?(?:まで)?(?![\d/:時])", x =>
+            {
+                int y = x.Groups[1].Success ? int.Parse(x.Groups[1].Value) : today.Year;
+                int mo = int.Parse(x.Groups[2].Value), d = int.Parse(x.Groups[3].Value);
+                int mo2 = x.Groups[4].Success ? int.Parse(x.Groups[4].Value) : mo, d2 = int.Parse(x.Groups[5].Value);
+                if (mo < 1 || mo > 12 || mo2 < 1 || mo2 > 12 || d < 1 || d > DateTime.DaysInMonth(y, mo)) return;
+                var a = new DateTime(y, mo, d);
+                if (!x.Groups[1].Success && a < today.AddDays(-7)) a = a.AddYears(1);
+                int y2 = a.Year;
+                if (d2 < 1 || d2 > DateTime.DaysInMonth(y2, mo2)) return;
+                var b = new DateTime(y2, mo2, d2);
+                if (b < a) { b = b.AddYears(1); if (b > a.AddDays(366)) return; }
+                date = a; r.EndDate = b; r.IsEvent = true;
+            });
             s = Take(s, @"(?<![\d/])(?:(\d{4})[/年])?(\d{1,2})[/月](\d{1,2})日?(?![\d/])", x =>
             {
                 int mo = int.Parse(x.Groups[2].Value), d = int.Parse(x.Groups[3].Value);
@@ -166,6 +260,14 @@ namespace TealSuite.Tasks
                 date = today + r.Time.Value <= now ? today.AddDays(1) : today;
             }
             r.Date = date;
+            if (days >= 1)
+            {
+                if (!r.Date.HasValue) r.Date = today;
+                r.EndDate = r.Date.Value.AddDays(days - 1);
+            }
+            if (r.Location != null || r.AllDay) r.IsEvent = true;
+            if (r.AllDay) { r.Time = null; r.EndTime = null; }
+            if (r.IsEvent && !r.Date.HasValue) r.Date = today;
             if (r.Repeat != Repeat.None && !r.Date.HasValue) r.Date = today;
             // 平日のくり返しで、土日になったら次の月曜から
             if (r.Repeat == Repeat.Weekdays && r.Date.HasValue)
@@ -173,6 +275,18 @@ namespace TealSuite.Tasks
 
             r.Title = CleanTitle(s);
             return r;
+        }
+
+        /// <summary>午前・午後などの前置きから 24 時間制に (前置きの無い 1〜6 時は午後)</summary>
+        static int Hour24(int h, string ampm)
+        {
+            bool pm = ampm == "午後" || ampm == "夕方" || ampm == "夜" || ampm == "今夜" || ampm == "今晩";
+            if (pm && h < 12) h += 12;
+            else if (ampm == "昼" && h < 6) h += 12;
+            else if (ampm == "午前" && h == 12) h = 0;
+            else if (string.IsNullOrEmpty(ampm) && h >= 1 && h <= 6) h += 12; // 「3時」はたいてい午後
+            if (h == 24) h = 0;
+            return h;
         }
 
         /// <summary>全角の数字・記号を半角に</summary>
@@ -185,6 +299,9 @@ namespace TealSuite.Tasks
                 else if (c == '：') sb.Append(':');
                 else if (c == '／') sb.Append('/');
                 else if (c == '＃') sb.Append('#');
+                else if (c == '＠') sb.Append('@');
+                else if (c == '～') sb.Append('〜');
+                else if (c == '－' || c == '‐' || c == '–' || c == '−') sb.Append('-');
                 else if (c == '．') sb.Append('.');
                 else if (c == '　' || c == '\t' || c == '\r' || c == '\n') sb.Append(' ');
                 else sb.Append(c);

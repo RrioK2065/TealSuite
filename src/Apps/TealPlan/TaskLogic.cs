@@ -1,4 +1,4 @@
-// Teal Tasks - 計算 (おすすめ順の点数・繰り返し・お知らせ・集計)。画面から切り離してテストできるようにしている
+// Teal Plan - 計算 (おすすめ順の点数・繰り返し・お知らせ・集計)。画面から切り離してテストできるようにしている
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -18,6 +18,7 @@ namespace TealSuite.Tasks
     {
         public string Key, Title, Text;
         public TaskItem Task;
+        public EventItem Event;
     }
 
     public static class TaskLogic
@@ -196,14 +197,19 @@ namespace TealSuite.Tasks
             if (st.Morning && now.Hour >= 5)
             {
                 var today = TodayList(data.Tasks, now);
+                var evs = EventLogic.Collect(data, null, now.Date, now.Date.AddDays(1), EventLogic.ShowEvents);
                 string key = "morning|" + Fmt.Iso(now);
-                if (today.Count > 0 && !data.Notified.Contains(key))
+                if ((today.Count > 0 || evs.Count > 0) && !data.Notified.Contains(key))
                 {
                     int over = today.Count(t => IsOverdue(t, now) && t.DueDate.Value < now.Date);
                     var sb = new StringBuilder();
+                    foreach (var x in evs.Take(3)) sb.AppendLine("・" + EventLogic.TimeText(x) + " " + x.Title);
+                    if (evs.Count > 3) sb.AppendLine("ほか予定 " + (evs.Count - 3) + " 件");
                     foreach (var t in today.Take(3)) sb.AppendLine("・" + (t.HasTime ? Fmt.Time(t.DueAt.Value) + " " : "") + t.Title);
                     if (today.Count > 3) sb.AppendLine("ほか " + (today.Count - 3) + " 件");
-                    list.Add(new Notice { Key = key, Title = "今日のタスク " + today.Count + " 件" + (over > 0 ? " (期限切れ " + over + " 件)" : ""), Text = sb.ToString().TrimEnd() });
+                    string title = "今日のタスク " + today.Count + " 件" + (over > 0 ? " (期限切れ " + over + " 件)" : "");
+                    if (evs.Count > 0) title = "今日の予定 " + evs.Count + " 件・" + title.Substring(3);
+                    list.Add(new Notice { Key = key, Title = title, Text = sb.ToString().TrimEnd() });
                 }
             }
             foreach (var t in data.Tasks)
@@ -219,6 +225,7 @@ namespace TealSuite.Tasks
                     list.Add(new Notice { Key = key, Task = t, Title = t.Title, Text = "期限: " + when + (t.DurationMin > 0 ? "  ・  " + Fmt.Minutes(t.DurationMin) : "") });
                 }
             }
+            list.AddRange(EventLogic.DueNotices(data, now));
             return list;
         }
 
@@ -231,6 +238,7 @@ namespace TealSuite.Tasks
                 var parts = k.Split('|');
                 if (parts.Length != 2) continue;
                 if (parts[0] == "morning") { var d = Fmt.ParseIso(parts[1]); if (d.HasValue && d.Value > now.AddDays(-7)) keep.Add(k); continue; }
+                if (parts[0].StartsWith("ev:")) { if (EventLogic.KeepNotified(data, parts[0].Substring(3), parts[1], now)) keep.Add(k); continue; }
                 var t = data.Find(parts[0]);
                 if (t == null || t.Done || t.Due != parts[1]) continue;
                 keep.Add(k);

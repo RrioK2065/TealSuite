@@ -92,6 +92,7 @@ namespace TealSuite.Wallet
             Shop = DataStore.LoadOrDefault(ShopData.FileName, ShopData.CreateDefault, out shopWarn);
             Shop.Normalize();
             if (shopWarn != null) Load += (s, e) => Dialogs.Warn(this, shopWarn);
+            AppHost.OpenRequested = r => OpenFromRequest(r);
 
             WindowMemory.Attach(this, 980, 680);
             remindTimer.Interval = 5000;
@@ -271,6 +272,61 @@ namespace TealSuite.Wallet
         void SelectInList(Subscription s)
         {
             for (int i = 0; i < List.Items.Count; i++) if (((Subscription)List.Items[i]).Id == s.Id) { List.SelectedIndex = i; return; }
+        }
+
+        /// <summary>1.10.0: ほかのアプリ (Teal Plan のカレンダー・Teal Hub の「今日」と検索) から「この項目を開いて」と頼まれた。見つかったら true</summary>
+        public bool OpenFromRequest(OpenRequest r)
+        {
+            if (r == null || string.IsNullOrEmpty(r.Key)) return false;
+            switch (r.Kind)
+            {
+                case "sub":
+                {
+                    var sub = Data.Subs.FirstOrDefault(x => x.Id == r.Key);
+                    if (sub == null) break;
+                    if (sub.Status == SubStatus.Cancelled)
+                    {
+                        Tabs.SelectedIndex = 3;
+                        RefreshCancelled();
+                        for (int i = 0; i < cancelledList.Items.Count; i++) if (((Subscription)cancelledList.Items[i]).Id == sub.Id) { cancelledList.SelectedIndex = i; break; }
+                    }
+                    else
+                    {
+                        Tabs.SelectedIndex = 1;
+                        Search.Text = "";
+                        if (filter.SelectedIndex == 1 && sub.Status != SubStatus.Active || filter.SelectedIndex == 2 && sub.Status != SubStatus.Cancelling) filter.SelectedIndex = 0;
+                        RefreshList();
+                        SelectInList(sub);
+                        List.Focus();
+                    }
+                    footer.StatusText = "「" + sub.Name + "」を開きました";
+                    return true;
+                }
+                case "shop":
+                {
+                    var list = Shop.Lists.FirstOrDefault(l => l.Items.Any(i => i.Id == r.Key));
+                    if (list == null) break;
+                    var item = list.Items.First(i => i.Id == r.Key);
+                    Shop.Settings.CurrentList = list.Id;
+                    Tabs.SelectedIndex = 4;
+                    RefreshShop(item);
+                    footer.StatusText = "買い物リスト「" + list.Name + "」の「" + item.Name + "」を開きました";
+                    return true;
+                }
+                case "want":
+                {
+                    var w = Shop.Wants.FirstOrDefault(x => x.Id == r.Key);
+                    if (w == null) break;
+                    Tabs.SelectedIndex = 5;
+                    if (wantFilter.SelectedIndex != 2 && (wantFilter.SelectedIndex == 0) == w.Bought) wantFilter.SelectedIndex = 2;
+                    RefreshWants(w);
+                    footer.StatusText = "欲しいもの「" + w.Name + "」を開きました";
+                    return true;
+                }
+                default: return false;
+            }
+            footer.StatusText = "開こうとした項目が見つかりませんでした (消されたかもしれません)";
+            return false;
         }
 
         public void InsertSamples()

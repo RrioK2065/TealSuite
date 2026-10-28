@@ -1,14 +1,14 @@
 {
   "manifestVersion": 1,
   "suite": "TealSuite",
-  "suiteVersion": "1.9.1",
+  "suiteVersion": "1.10.0",
   "apps": [
     {
       "id": "TealHub",
       "name": "Teal Hub",
       "role": "アプリ管理",
       "exe": "TealHub.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "TealSuite のアプリをまとめて起動・終了。各アプリのショートカット・常駐・スタートアップとアップデートもここから",
       "icon": "TealHub.ico",
       "legacyIds": ["AppManager"],
@@ -23,7 +23,7 @@
       "name": "Teal Pass",
       "role": "パスワード管理",
       "exe": "apps/TealPass/TealPass.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "パスワードの生成・保管・管理。サイトごとにメモも残せます",
       "icon": "apps/TealPass/TealPass.ico",
       "legacyIds": ["PasswordMaker"],
@@ -37,7 +37,7 @@
       "name": "Teal Memo",
       "role": "メモ",
       "exe": "apps/TealMemo/TealMemo.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "思いついたことをすぐに書き留めるメモ帳。自動保存",
       "icon": "apps/TealMemo/TealMemo.ico",
       "legacyIds": ["Memo"],
@@ -51,7 +51,7 @@
       "name": "Teal Clip",
       "role": "コピー履歴",
       "exe": "apps/TealClip/TealClip.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "コピーした文字を10件まで記録。ショートカットで呼び出し (常駐がおすすめ)",
       "icon": "apps/TealClip/TealClip.ico",
       "legacyIds": ["ClipboardHistory"],
@@ -65,7 +65,7 @@
       "name": "Teal Volume",
       "role": "音量操作",
       "exe": "apps/TealVolume/TealVolume.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "アプリごとの音量を調整。ショートカットでミキサーを開閉",
       "icon": "apps/TealVolume/TealVolume.ico",
       "legacyIds": ["VolumeMixer"],
@@ -79,7 +79,7 @@
       "name": "Teal Wallet",
       "role": "サブスク＆買い物リスト",
       "exe": "apps/TealWallet/TealWallet.exe",
-      "version": "1.9.1",
+      "version": "1.10.0",
       "description": "サブスクの金額・更新日と、買い物リスト・欲しいものをまとめて管理。今月の支出と予算もひと目で",
       "icon": "apps/TealWallet/TealWallet.ico",
       "legacyIds": ["TealSub"],
@@ -90,19 +90,19 @@
       "residentNote": "更新日・無料期間の終わりのお知らせは、起動している (常駐している) 間だけ出ます。"
     },
     {
-      "id": "TealTasks",
-      "name": "Teal Tasks",
-      "role": "タスク管理＆カレンダー",
-      "exe": "apps/TealTasks/TealTasks.exe",
-      "version": "1.9.1",
-      "description": "やることを期限・優先度つきで管理。カレンダーで予定を見ながらドラッグで日程変更",
-      "icon": "apps/TealTasks/TealTasks.ico",
-      "legacyIds": [],
+      "id": "TealPlan",
+      "name": "Teal Plan",
+      "role": "タスク＆予定",
+      "exe": "apps/TealPlan/TealPlan.exe",
+      "version": "1.10.0",
+      "description": "やること (小タスクつき) と予定をひとつのカレンダーで管理。今日の予定とタスクを 1 画面で",
+      "icon": "apps/TealPlan/TealPlan.ico",
+      "legacyIds": ["TealTasks"],
       "shortcuts": [
         {"slot": "open", "label": "画面を開く / 隠す"}
       ],
       "resident": true,
-      "residentNote": "期限のお知らせは、起動している (常駐している) 間だけ出ます。"
+      "residentNote": "期限・予定のお知らせは、起動している (常駐している) 間だけ出ます。"
     }
   ]
 }

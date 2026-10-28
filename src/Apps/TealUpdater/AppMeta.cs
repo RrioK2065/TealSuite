@@ -16,8 +16,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Updater - TealSuite のアップデート")]
 [assembly: AssemblyDescription("アップデート ファイル (.tealupdate) で TealSuite のアプリを新しくします")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.9.1.0")]
-[assembly: AssemblyFileVersion("1.9.1.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace TealSuite.Updater
 {

@@ -1,4 +1,4 @@
-// Teal Tasks - 1.8.0 の追加: テンプレート・まとめて追加・完了したタスクの整理・複製
+// Teal Plan - 1.8.0 の追加: テンプレート・まとめて追加・完了したタスクの整理・複製
 using System;
 using System.Collections.Generic;
 using System.Drawing;

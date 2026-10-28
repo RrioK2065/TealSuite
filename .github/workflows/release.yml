@@ -8,6 +8,7 @@
 #                 - 各アプリを本当に起動して画面が出て落ちないか (起動のチェック) + スクリーンショット
 #                 - 前のリリースの zip に、新しい .tealupdate を前の版の TealUpdater で当てる (アップデートのチェック)
 #                   1.8.0 からも (Teal Sub → Teal Wallet の引き継ぎ)
+#                   1.9.0 からも (Teal Tasks → Teal Plan の引き継ぎ。1.10.0)
 #   main に push されたときだけ、linux と windows の両方が通ったら:
 #     publish … apps.json の suiteVersion (例 1.9.1) のリリース v1.9.1 がまだなければ GitHub Releases に公開
 #               すでに同じバージョンのリリースがあれば何もしない (バージョンを上げずに push しても公開されない)。
@@ -127,7 +128,7 @@ jobs:
         run: |
           chcp 65001 | Out-Null
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-          Write-Host "TealSuite $env:VER / 前のリリース: $env:PREV_TAG"
+          Write-Host "TealSuite $env:VER / previous release: $env:PREV_TAG"
           [System.Environment]::OSVersion.VersionString
           $PSVersionTable.PSVersion.ToString()
           Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" | Select-Object Release, Version | Format-List
@@ -215,6 +216,20 @@ jobs:
           Start-Transcript -Path out\logs\update-180.log -Append | Out-Null
           $code = 1
           try { .\tools\win\update-test.ps1 -PrevZip prev180\TealSuite-1.8.0.zip -Package "release\TealSuite-update-$env:VER.tealupdate" -Dist shipped\TealSuite -Seed180 -Shots out\screenshots\update; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: アップデートのチェック (1.9.0 から。Teal Tasks → Teal Plan の引き継ぎ)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 8
+        run: |
+          # ASCII only in this script (Windows PowerShell 5.1 reads it as cp1252).
+          New-Item -ItemType Directory -Force prev190 | Out-Null
+          gh release download v1.9.0 --repo $env:GITHUB_REPOSITORY --dir prev190 --pattern "TealSuite-1.9.0.zip"
+          if (-not (Test-Path prev190\TealSuite-1.9.0.zip)) { throw "release v1.9.0 has no TealSuite-1.9.0.zip" }
+          # log via Start-Transcript (wrapping with 2>&1 turns stderr into errors on PowerShell 5.1)
+          Start-Transcript -Path out\logs\update-190.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\update-test.ps1 -PrevZip prev190\TealSuite-1.9.0.zip -Package "release\TealSuite-update-$env:VER.tealupdate" -Dist shipped\TealSuite -Seed19 -Shots out\screenshots\update; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
           exit $code
 
       - name: スクリーンショットとログを成果物にする

@@ -209,7 +209,7 @@ static class OnlineUpdateTests
         try
         {
             f.LoadManifest();
-            Check(f.SuiteVersion == "1.9.1", "今のバージョン: " + f.SuiteVersion);
+            Check(f.SuiteVersion == "1.10.0", "今のバージョン: " + f.SuiteVersion);
             var settings = new H.HubSettings();
             int saves = 0;
             var http = new FakeFetcher();
@@ -235,7 +235,7 @@ static class OnlineUpdateTests
             Check(msgs.Count == 1 && msgs[0].Contains("まだ公開"), "「更新を確認」では結果を出す: " + (msgs.Count > 0 ? msgs[0] : ""));
 
             // 新しいバージョン (自動)
-            var json = Encoding.UTF8.GetBytes(File.ReadAllText(FixturePath(dist)).Replace("1.7.0", "2.0.0")); // 今は 1.9.1 なので、見本は 1 つ先の版にする;
+            var json = Encoding.UTF8.GetBytes(File.ReadAllText(FixturePath(dist)).Replace("1.7.0", "2.0.0")); // 今は 1.10.0 なので、見本は 1 つ先の版にする;
             http.Ok(api, json);
             now = now.AddHours(25);
             int before = saves;
@@ -244,7 +244,7 @@ static class OnlineUpdateTests
             Check(f.UpdateButtonLabel.StartsWith("●") && f.UpdateButtonLabel.Contains("2.0.0"), "ボタンに印: " + f.UpdateButtonLabel);
             var bar = f.NoticeBars.FirstOrDefault(b => b.Message.Contains("2.0.0"));
             Check(bar != null && bar.Action.Text == "今すぐアップデート" && bar.Extra != null && bar.Extra.Text == "内容を見る" && bar.Dismiss != null, "お知らせ: 今すぐアップデート・内容を見る・あとで");
-            Check(bar != null && bar.Message.Contains("今は 1.9.1") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
+            Check(bar != null && bar.Message.Contains("今は 1.10.0") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
             now = now.AddHours(25);
             u.AutoCheck();
             Check(balloons.Count == 1, "同じバージョンの通知領域のお知らせは 1 回だけ");
@@ -295,7 +295,7 @@ static class OnlineUpdateTests
             Check(File.Exists(expectPath) && !u.Downloading && u.DownloadPercent == -1, "ダウンロード先は TealSuite-download");
 
             // 最新になったら印は消える
-            http.Ok(api, Encoding.UTF8.GetString(json).Replace("v2.0.0\"", "v1.9.1\""));
+            http.Ok(api, Encoding.UTF8.GetString(json).Replace("v2.0.0\"", "v1.10.0\""));
             msgs.Clear();
             u.CheckNow();
             Check(u.Available == null && f.UpdateButtonLabel == "アップデート ▾" && msgs.Count == 1 && msgs[0].Contains("最新"), "最新なら印を消して「最新のバージョンです」");

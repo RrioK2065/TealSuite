@@ -2,15 +2,17 @@
   アップデートのチェック (Windows): 前のリリースの zip を展開し、新しく作った .tealupdate を
   「前のリリースに入っている本物の TealUpdater.exe」で当てて、結果を確かめる
     powershell -ExecutionPolicy Bypass -File tools\win\update-test.ps1 `
-        -PrevZip prev\TealSuite-1.9.0.zip -Package release\TealSuite-update-1.9.1.tealupdate -Dist dist\TealSuite
+        -PrevZip prev\TealSuite-1.9.1.zip -Package release\TealSuite-update-1.10.0.tealupdate -Dist dist\TealSuite
     -Seed180 … 1.8.0 のデータ (Teal Sub のサブスク・Hub の設定・スタートアップの登録) を置いてから試し、
-               Teal Wallet に引き継がれることも確かめる
+               Teal Wallet に引き継がれることも確かめる (Teal Tasks のデータも置く)
+    -Seed19  … 1.9.x のデータ (Teal Tasks のタスク・Hub の設定・スタートアップの登録) を置いてから試し、
+               Teal Plan に引き継がれることも確かめる (1.10.0)。前の版が 1.9.x なら付けなくても行う
   手順:
     1. 前の版を一時フォルダに展開し、前の版の Teal Hub と Teal Memo を起動しておく (アップデートで閉じて起動し直すかの確認)
     2. 前の版の TealUpdater.exe <ファイル> を起動 → %TEMP% にコピーされた TealUpdater の画面の「アップデート」を押す
        (ボタンに BM_CLICK → だめなら Enter キー。画面を操作できなかったときは、前の版の TealUpdater.exe の中の
         UpdateEngine を直接呼んで当てる。そのときは警告を出す)
-    3. 確かめること: apps.json のバージョン・アプリの一覧 (TealSub がない・重複がない)・
+    3. 確かめること: apps.json のバージョン・アプリの一覧 (TealSub・TealTasks がない・重複がない)・
        全ファイルのハッシュが新しいビルドと同じ・余分なファイルがない (backup\ は除く)・.update-staging が残っていない
   1 つでも失敗があれば終了コード 1。
 #>
@@ -19,6 +21,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Package,
     [Parameter(Mandatory = $true)][string]$Dist,
     [switch]$Seed180,
+    [switch]$Seed19,
     [string]$Shots = "",
     [int]$Timeout = 120
 )
@@ -45,15 +48,33 @@ $envRoot = Join-Path $work "env"
 Set-IsolatedEnv $envRoot
 $data = $env:TEALSUITE_DATA_DIR
 
-if ($Seed180) {
-    # 1.8.0 の利用者のデータ (Teal Sub)
-    New-Item -ItemType Directory -Force (Join-Path $data "TealSub"), (Join-Path $data "TealHub") | Out-Null
+# 1.10.0: Teal Tasks → Teal Plan。1.9.x から当てるときは自動で確かめる
+$seedTasks = $Seed180 -or $Seed19 -or ("$prevVer" -like "1.9.*")
+# 1.10.0 より前の版で、Teal Tasks がまだある (apps.json に TealTasks がある) ときだけ
+if ($seedTasks -and -not ($prevManifest.apps | Where-Object { $_.id -eq "TealTasks" })) { $seedTasks = $false }
+if ($Seed180 -or $seedTasks) {
     $utf8 = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText((Join-Path $data "TealSub\subs.json"), '{"version":1,"subs":[{"id":"ci1","name":"CI の動画サービス","amount":990,"cycle":"monthly"}],"settings":{"budget":18000}}', $utf8)
-    [System.IO.File]::WriteAllText((Join-Path $data "TealHub\app-settings.json"), '{"version":1,"apps":[{"id":"TealMemo","hotkey":"Ctrl+Alt+M"},{"id":"TealSub","hotkey":"Ctrl+Alt+S","resident":true}]}', $utf8)
-    $oldExe = Join-Path $suite "apps\TealSub\TealSub.exe"
-    [System.IO.File]::WriteAllText($env:TEALSUITE_RUNKEY_FILE, "TealSuite.TealSub`t`"$oldExe`" --startup`r`n", $utf8)
-    Write-Host "  1.8.0 のデータを置きました (TealSub\subs.json・Hub の設定・スタートアップ TealSuite.TealSub)"
+    New-Item -ItemType Directory -Force (Join-Path $data "TealHub") | Out-Null
+    $hubApps = @('{"id":"TealMemo","hotkey":"Ctrl+Alt+M"}')
+    $runKey = ""
+    if ($Seed180) {
+        # 1.8.0 の利用者のデータ (Teal Sub)
+        New-Item -ItemType Directory -Force (Join-Path $data "TealSub") | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $data "TealSub\subs.json"), '{"version":1,"subs":[{"id":"ci1","name":"CI の動画サービス","amount":990,"cycle":"monthly"}],"settings":{"budget":18000}}', $utf8)
+        $hubApps += '{"id":"TealSub","hotkey":"Ctrl+Alt+S","resident":true}'
+        $runKey += "TealSuite.TealSub`t`"$(Join-Path $suite 'apps\TealSub\TealSub.exe')`" --startup`r`n"
+        Write-Host "  1.8.0 のデータを置きました (TealSub\subs.json・Hub の設定・スタートアップ TealSuite.TealSub)"
+    }
+    if ($seedTasks) {
+        # 1.9.x の利用者のデータ (Teal Tasks)
+        New-Item -ItemType Directory -Force (Join-Path $data "TealTasks") | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $data "TealTasks\tasks.json"), '{"version":1,"tasks":[{"id":"ci1","title":"CI のタスク","priority":1,"tags":[],"repeat":"none","done":false,"subtasks":[{"text":"CI の小タスク","done":false}]}],"settings":{"remind":true,"remindMinutes":15,"morning":true},"notified":[]}', $utf8)
+        $hubApps += '{"id":"TealTasks","hotkey":"Ctrl+Alt+T","resident":true}'
+        $runKey += "TealSuite.TealTasks`t`"$(Join-Path $suite 'apps\TealTasks\TealTasks.exe')`" --startup`r`n"
+        Write-Host "  1.9.x のデータを置きました (TealTasks\tasks.json・Hub の設定・スタートアップ TealSuite.TealTasks)"
+    }
+    [System.IO.File]::WriteAllText((Join-Path $data "TealHub\app-settings.json"), '{"version":1,"apps":[' + ($hubApps -join ',') + ']}', $utf8)
+    [System.IO.File]::WriteAllText($env:TEALSUITE_RUNKEY_FILE, $runKey, $utf8)
 }
 
 # --- 1. 前の版のアプリを起動しておく ---
@@ -183,7 +204,7 @@ $ids = @($inst.apps | ForEach-Object { $_.id })
 $want = @($distManifest.apps | ForEach-Object { $_.id })
 $dups = @($ids | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
 if ($dups.Count -gt 0) { Write-Bad "$label : apps.json に重複: $($dups -join ', ')" }
-if ($ids -contains "TealSub") { Write-Bad "$label : apps.json に TealSub が残っています" }
+foreach ($old in @("TealSub", "TealTasks")) { if ($ids -contains $old) { Write-Bad "$label : apps.json に $old が残っています" } }
 $missing = @($want | Where-Object { $ids -notcontains $_ }); $extra = @($ids | Where-Object { $want -notcontains $_ })
 if ($missing.Count -or $extra.Count) { Write-Bad "$label : アプリの一覧が違います (足りない: $($missing -join ', ') / 余分: $($extra -join ', '))" }
 else { Write-Ok "$label : アプリの一覧 ($($ids -join ', '))" }
@@ -212,9 +233,12 @@ foreach ($d in @(Get-ChildItem $suite -Recurse -Directory | Where-Object { -not 
 if (Test-Path (Join-Path $suite ".update-staging")) { Write-Bad "$label : .update-staging が残っています" } else { Write-Ok "$label : .update-staging なし" }
 if (Test-Path (Join-Path $suite "backup")) { Write-Ok "$label : backup フォルダに前の版を保存 ($(@(Get-ChildItem (Join-Path $suite 'backup')).Count) 件)" } else { Write-Warn "$label : backup フォルダがありません" }
 
-# --- 1.8.0 から: 新しい Teal Hub と Teal Wallet を起動して、引き継ぎを確かめる ---
-if ($Seed180) {
-    foreach ($rel in @("TealHub.exe", "apps\TealWallet\TealWallet.exe")) {
+# --- 1.8.0 / 1.9.x から: 新しい Teal Hub と、名前の変わったアプリを起動して、引き継ぎを確かめる ---
+if ($Seed180 -or $seedTasks) {
+    $launch = @("TealHub.exe")
+    if ($Seed180) { $launch += "apps\TealWallet\TealWallet.exe" }
+    if ($seedTasks) { $launch += "apps\TealPlan\TealPlan.exe" }
+    foreach ($rel in $launch) {
         $p = Start-Process -FilePath (Join-Path $suite $rel) -PassThru
         $sw = [Diagnostics.Stopwatch]::StartNew()
         while ($sw.Elapsed.TotalSeconds -lt 20 -and -not $p.HasExited -and -not (Get-VisibleWindows $p.Id | Where-Object { $_.Class -ne "#32770" -and $_.Title })) { Start-Sleep -Milliseconds 300 }
@@ -225,18 +249,30 @@ if ($Seed180) {
         else { Write-Bad "$label : アップデート後の $rel の画面が出ません" }
     }
     Start-Sleep -Seconds 2
-    foreach ($id in @("TealWallet", "TealHub")) { [void](Send-ExitSignal $id) }
+    foreach ($id in @("TealWallet", "TealPlan", "TealHub")) { [void](Send-ExitSignal $id) }
     Start-Sleep -Seconds 3
     Stop-Suite $suite
-    $subs = Join-Path $data "TealWallet\subs.json"
-    if ((Test-Path $subs) -and ((Get-Content -Raw -Encoding UTF8 $subs) -match "CI の動画サービス")) { Write-Ok "$label : Teal Sub のデータが TealWallet\subs.json に引き継がれた" } else { Write-Bad "$label : TealWallet\subs.json に Teal Sub のデータがありません" }
-    if (Test-Path (Join-Path $data "TealSub\subs.json")) { Write-Ok "$label : 元の TealSub\subs.json は残っている (前の版に戻しても使える)" } else { Write-Warn "$label : 元の TealSub\subs.json がありません" }
     $prefs = Get-Content -Raw -Encoding UTF8 (Join-Path $data "TealHub\app-settings.json") | ConvertFrom-Json
-    $pw = $prefs.apps | Where-Object { $_.id -eq "TealWallet" } | Select-Object -First 1
-    if ($pw -and $pw.hotkey -eq "Ctrl+Alt+S" -and -not ($prefs.apps | Where-Object { $_.id -eq "TealSub" })) { Write-Ok "$label : Hub の設定 (ショートカット Ctrl+Alt+S) が TealWallet に付け替えられた" } else { Write-Bad "$label : Hub の設定が付け替えられていません: $(Get-Content -Raw -Encoding UTF8 (Join-Path $data 'TealHub\app-settings.json'))" }
     $rk = if (Test-Path $env:TEALSUITE_RUNKEY_FILE) { Get-Content -Raw -Encoding UTF8 $env:TEALSUITE_RUNKEY_FILE } else { "" }
     Write-Host "  スタートアップ: $($rk -replace "`r?`n", ' / ')"
-    if ($rk -match "TealSuite\.TealWallet\t.*apps\\TealWallet\\TealWallet\.exe" -and $rk -notmatch "TealSuite\.TealSub\t") { Write-Ok "$label : スタートアップが TealSuite.TealWallet (TealWallet.exe) に登録し直された" } else { Write-Bad "$label : スタートアップの登録が引き継がれていません" }
+    if ($Seed180) {
+        $subs = Join-Path $data "TealWallet\subs.json"
+        if ((Test-Path $subs) -and ((Get-Content -Raw -Encoding UTF8 $subs) -match "CI の動画サービス")) { Write-Ok "$label : Teal Sub のデータが TealWallet\subs.json に引き継がれた" } else { Write-Bad "$label : TealWallet\subs.json に Teal Sub のデータがありません" }
+        if (Test-Path (Join-Path $data "TealSub\subs.json")) { Write-Ok "$label : 元の TealSub\subs.json は残っている (前の版に戻しても使える)" } else { Write-Warn "$label : 元の TealSub\subs.json がありません" }
+        $pw = $prefs.apps | Where-Object { $_.id -eq "TealWallet" } | Select-Object -First 1
+        if ($pw -and $pw.hotkey -eq "Ctrl+Alt+S" -and -not ($prefs.apps | Where-Object { $_.id -eq "TealSub" })) { Write-Ok "$label : Hub の設定 (ショートカット Ctrl+Alt+S) が TealWallet に付け替えられた" } else { Write-Bad "$label : Hub の設定が付け替えられていません: $(Get-Content -Raw -Encoding UTF8 (Join-Path $data 'TealHub\app-settings.json'))" }
+        if ($rk -match "TealSuite\.TealWallet\t.*apps\\TealWallet\\TealWallet\.exe" -and $rk -notmatch "TealSuite\.TealSub\t") { Write-Ok "$label : スタートアップが TealSuite.TealWallet (TealWallet.exe) に登録し直された" } else { Write-Bad "$label : スタートアップの登録が引き継がれていません (TealWallet)" }
+    }
+    if ($seedTasks) {
+        $tasks = Join-Path $data "TealPlan\tasks.json"
+        if ((Test-Path $tasks) -and ((Get-Content -Raw -Encoding UTF8 $tasks) -match "CI のタスク")) { Write-Ok "$label : Teal Tasks のデータが TealPlan\tasks.json に引き継がれた" } else { Write-Bad "$label : TealPlan\tasks.json に Teal Tasks のデータがありません" }
+        if (Test-Path (Join-Path $data "TealTasks\tasks.json")) { Write-Ok "$label : 元の TealTasks\tasks.json は残っている (前の版に戻しても使える)" } else { Write-Warn "$label : 元の TealTasks\tasks.json がありません" }
+        $pp = $prefs.apps | Where-Object { $_.id -eq "TealPlan" } | Select-Object -First 1
+        if ($pp -and $pp.hotkey -eq "Ctrl+Alt+T" -and -not ($prefs.apps | Where-Object { $_.id -eq "TealTasks" })) { Write-Ok "$label : Hub の設定 (ショートカット Ctrl+Alt+T) が TealPlan に付け替えられた" } else { Write-Bad "$label : Hub の設定が TealPlan に付け替えられていません: $(Get-Content -Raw -Encoding UTF8 (Join-Path $data 'TealHub\app-settings.json'))" }
+        if ($rk -match "TealSuite\.TealPlan\t.*apps\\TealPlan\\TealPlan\.exe" -and $rk -notmatch "TealSuite\.TealTasks\t") { Write-Ok "$label : スタートアップが TealSuite.TealPlan (TealPlan.exe) に登録し直された" } else { Write-Bad "$label : スタートアップの登録が引き継がれていません (TealPlan)" }
+        $notices = Join-Path $data "TealHub\rename-notices.txt"
+        if ((Test-Path $notices) -and ((Get-Content -Raw -Encoding UTF8 $notices) -match "TealTasks>TealPlan")) { Write-Ok "$label : Hub が「Teal Tasks は Teal Plan になりました」を知らせた (rename-notices.txt)" } else { Write-Bad "$label : Hub の「Teal Plan になりました」のお知らせの記録がありません" }
+    }
     [void](Test-ErrorLogs $data "$label (アップデート後)")
 }
 
