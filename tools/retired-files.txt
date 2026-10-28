@@ -1,0 +1,9 @@
+# 途中の版でなくなったファイル (TealSuite フォルダからのパス)。
+# 全部入りのアップデート ファイル (リリースで作るもの) は、これらも「消す」指示に入れる。
+# そうしないと、もっと古い版から一気に上げた人のところに古い exe が残る。
+# 1.9.0: Teal Sub → Teal Wallet
+apps/TealSub/TealSub.exe
+apps/TealSub/TealSub.ico
+# 1.10.0: Teal Tasks → Teal Plan
+apps/TealTasks/TealTasks.exe
+apps/TealTasks/TealTasks.ico

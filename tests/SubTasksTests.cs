@@ -104,7 +104,7 @@ static class SubTasksTests
 
     public static void RunTasks(Action<bool, string> Check)
     {
-        TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
+        TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "");
         var now = new DateTime(2026, 10, 27, 10, 0, 0); // 火曜 10:00
 
         // ひとこと入力
@@ -211,7 +211,7 @@ static class SubTasksTests
     /// <summary>画面を作ってひとこと入力から追加・完了・元に戻す (Xvfb 上)</summary>
     public static void RunTasksUi(Action<bool, string> Check)
     {
-        TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
+        TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "");
         var now = new DateTime(2026, 10, 27, 10, 0, 0);
         using (var f = new T.MainForm())
         {
@@ -253,9 +253,12 @@ static class SubTasksTests
         SUB::TealSuite.Common.DataStore.Save(S.SubData.FileName, sd);
         // 1.9.0: 買い物リスト・欲しいもの (月の予算 40,000 円)
         SUB::TealSuite.Common.DataStore.Save(S.ShopData.FileName, S.ShopLogic.Sample(DateTime.Today));
-        TASKS::TealSuite.Common.AppInfo.Init("TealTasks", "Teal Tasks", "");
+        TASKS::TealSuite.Common.AppInfo.Init("TealPlan", "Teal Plan", "");
         var td = new T.TaskData();
         td.Tasks.AddRange(T.TaskLogic.SampleData(DateTime.Now));
+        // 1.10.0: 予定の見本と、小タスクのあるタスクを開いた状態
+        td.Events.AddRange(T.EventLogic.SampleData(DateTime.Now));
+        foreach (var t in td.Tasks.Where(x => x.Subtasks.Count > 0 && !x.Done).Take(2)) td.SetExpanded(t, true);
         // 1.8.0: テンプレートの見本
         T.TaskTools.SaveTemplate(td, new T.TaskTemplate { Name = "週次レポート", Task = new T.TaskItem { Title = "週次レポートを送る", Priority = T.TaskItem.High, DurationMin = 30 }, DueDays = 4, Time = "17:00" });
         T.TaskTools.SaveTemplate(td, new T.TaskTemplate { Name = "買い出し", Task = new T.TaskItem { Title = "スーパーで買い出し", DurationMin = 45 }, DueDays = 0 });

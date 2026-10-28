@@ -199,7 +199,8 @@ static class UpdaterTests
         Check(!planOf(p => p.AppsJson[2] = "{\"id\":\"TealNote\",\"name\":\"Teal Note\",\"version\":\"1.5.0\"}").CanApply, "新しいアプリに exe がなければ入れない");
         var noJson = Path.Combine(tmp, "upd-nojson"); Directory.CreateDirectory(noJson);
         Check(!U.UpdateEngine.Plan(U.UpdatePackage.Parse(Sample().Manifest()), U.InstalledSuite.Load(noJson)).CanApply, "apps.json がないフォルダには入れない");
-        var j13 = InstalledJson.Replace("  \"suiteVersion\": \"1.4.0\",\n", "").Replace("\"version\": \"1.4.0\", \"self\"", "\"version\": \"1.3.0\", \"self\"");
+        // Windows の checkout は .cs が CRLF なので、verbatim 文字列の改行を LF にそろえてから削る
+        var j13 = InstalledJson.Replace("\r\n", "\n").Replace("\r", "\n").Replace("  \"suiteVersion\": \"1.4.0\",\n", "").Replace("\"version\": \"1.4.0\", \"self\"", "\"version\": \"1.3.0\", \"self\"");
         var old = U.InstalledSuite.Load(MakeSuite(Path.Combine(tmp, "upd-13")));
         File.WriteAllText(Path.Combine(old.Dir, "apps.json"), j13.Replace("\r", ""));
         old = U.InstalledSuite.Load(old.Dir);

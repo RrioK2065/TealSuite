@@ -1,4 +1,4 @@
-// TealSuite スモークテスト (mono で実行: tests/run_tests.sh)
+// TealSuite スモークテスト (mono: tests/run_tests.sh、Windows: build.ps1 -Tests のあと tests/run_tests.ps1)
 // 各 exe を extern alias で参照し、画面以外のロジックを確かめる。
 extern alias PM;
 extern alias AM;
@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 static class SmokeTests
 {
@@ -22,8 +23,11 @@ static class SmokeTests
     }
     static void Section(string s) { Console.WriteLine("== " + s); }
 
+    [STAThread] // WinForms (AllowDrop の OLE) は STA でないと Windows で Show が戻らない
     static int Main(string[] args)
     {
+        // Windows のコンソール (GitHub Actions のログ) でも日本語が文字化けしないように
+        if (WinTests.IsWindows) { try { Console.OutputEncoding = new System.Text.UTF8Encoding(false); } catch { } }
         string tmp = Path.Combine(Path.GetTempPath(), "tealsuite-test-" + Process.GetCurrentProcess().Id);
         Directory.CreateDirectory(tmp);
         Environment.SetEnvironmentVariable("TEALSUITE_DATA_DIR", Path.Combine(tmp, "data"));
@@ -54,32 +58,64 @@ static class SmokeTests
         Run("オンライン アップデート: バージョン・リリース・sha256・接続先・ダウンロード", () => OnlineUpdateTests.RunLogic(Check, tmp, dist));
         Run("オンライン アップデート: お知らせ・ボタン・メニュー・TealUpdater へ", () => OnlineUpdateTests.RunUi(Check, tmp, dist));
         Run("Teal Wallet (サブスク): 更新日・合計・見直し候補・お知らせ", () => SubTasksTests.RunSub(Check));
-        Run("Teal Tasks: ひとこと入力・優先度・くり返し・お知らせ・統計", () => SubTasksTests.RunTasks(Check));
-        Run("Teal Tasks / Teal Wallet: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
+        Run("Teal Plan: ひとこと入力・優先度・くり返し・お知らせ・統計", () => SubTasksTests.RunTasks(Check));
+        Run("Teal Plan / Teal Wallet: 画面 (追加・完了・元に戻す・見本データ)", () => SubTasksTests.RunTasksUi(Check));
         Run("1.8.0 Teal Memo: ピン留め・タグ・ゴミ箱・読み込み (文字コード・CSV)", () => V180Tests.RunMemo(Check));
         Run("1.8.0 Teal Pass: 変更履歴・パスワードの点検・CSV", () => V180Tests.RunPass(Check));
         Run("1.8.0 Teal Clip: 履歴の数・自動削除・定型文・検索・除外", () => V180Tests.RunClip(Check));
         Run("1.8.0 Teal Volume: プリセット・すべてミュート・固定と非表示", () => V180Tests.RunVolume(Check));
         Run("1.8.0 Teal Hub: バックアップと復元・更新内容", () => V180Tests.RunHub(Check, tmp));
         Run("1.8.0 Teal Wallet (サブスク): 値上げの記録・予算・支払い予定・CSV 読み込み", () => V180Tests.RunSub(Check));
-        Run("1.8.0 Teal Tasks: 平日・毎年・テンプレート・まとめて追加・整理", () => V180Tests.RunTasks(Check));
-        Run("1.8.0 Teal Tasks: 画面 (その他メニュー)", () => V180Tests.RunTasksUi(Check));
+        Run("1.8.0 Teal Plan: 平日・毎年・テンプレート・まとめて追加・整理", () => V180Tests.RunTasks(Check));
+        Run("1.8.0 Teal Plan: 画面 (その他メニュー)", () => V180Tests.RunTasksUi(Check));
         Run("1.9.0 Teal Wallet 買い物リスト: ひとこと入力の読み取り", () => V190Tests.RunParse(Check));
         Run("1.9.0 Teal Wallet 買い物リスト: 売り場・合計・買い物を終える・よく買うもの・欲しいもの", () => V190Tests.RunShop(Check));
         Run("1.9.0 Teal Wallet 買い物リスト: 画面", () => V190Tests.RunShopUi(Check));
         Run("1.9.0 Teal Sub → Teal Wallet: データ・設定・スタートアップ・バックアップの引き継ぎ", () => V190Tests.RunRename(Check, tmp));
         Run("1.9.0 アップデート: apps.json の付け替え・TealSub.exe の削除", () => V190Tests.RunUpdate(Check, dist));
+        Run("1.10.0 Teal Plan: 小タスク (追加・並べ替え・開く/閉じる)", () => V1100Tests.RunSubtasks(Check));
+        Run("1.10.0 Teal Plan: ひとこと入力の予定", () => V1100Tests.RunParse(Check));
+        Run("1.10.0 Teal Plan: 予定 (くり返し・ほかのアプリの項目・予定表・お知らせ)", () => V1100Tests.RunEvents(Check));
+        Run("1.10.0 Teal Plan: 画面 (一覧の小タスク・キー操作)", () => V1100Tests.RunListUi(Check));
+        Run("1.10.0 Teal Plan: 画面 (予定・カレンダーでなぞる・動かす)", () => V1100Tests.RunEventUi(Check));
+        Run("1.10.0 Teal Tasks → Teal Plan: データ・設定・スタートアップ・お知らせ・バックアップの引き継ぎ", () => V1100Tests.RunRename(Check, tmp));
+        Run("1.10.0 アップデート: apps.json の付け替え・TealTasks.exe の削除", () => V1100Tests.RunUpdate(Check, dist));
+        Run("1.10.0 Teal Plan: 一覧の「予定」ではタスク用のボタンを隠す", () => V1100IntegrationTests.RunPlanButtons(Check));
+        Run("1.10.0 連携: Teal Wallet の支払い日を Teal Plan のカレンダーに・壊れたデータ", () => V1100IntegrationTests.RunRead(Check, tmp));
+        Run("1.10.0 連携: ほかのアプリから「この項目を開いて」", () => V1100IntegrationTests.RunOpen(Check, tmp));
+        Run("1.10.0 連携: Teal Pass のサイト名の索引 (秘密は入れない・オフで消す)", () => V1100IntegrationTests.RunPassIndex(Check, tmp));
+        Run("1.10.0 連携: Teal Hub の「今日」・検索・共通の #タグ", () => V1100IntegrationTests.RunHome(Check, tmp));
+        Run("1.10.0 連携: Teal Hub の画面 (今日・検索・開く・通知領域の件数)", () => V1100IntegrationTests.RunHubUi(Check, tmp, dist));
+        Run("Windows: 本物の DPAPI (Teal Pass・Teal Clip)", () => WinTests.RunDpapi(Check));
+        Run("Windows: 本物のレジストリ (スタートアップの Run キー)", () => WinTests.RunRegistry(Check));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
         return fail == 0 ? 0 : 1;
     }
 
+    const int SectionTimeoutMs = 120000;
+
     static void Run(string name, Action a)
     {
         Section(name);
+        Console.Out.Flush();
+        // 1 つの節が Win32 呼び出しで止まっても、ジョブの制限時間まで待たない
+        var done = new ManualResetEvent(false);
+        var watch = new Thread(() =>
+        {
+            if (!done.WaitOne(SectionTimeoutMs))
+            {
+                Console.WriteLine("  FAIL " + name + " : timed out after " + (SectionTimeoutMs / 1000) + " seconds");
+                Console.Out.Flush();
+                Environment.Exit(2);
+            }
+        });
+        watch.IsBackground = true;
+        watch.Start();
         try { a(); }
         catch (Exception ex) { Check(false, "例外: " + ex); }
+        finally { done.Set(); watch.Join(2000); done.Close(); }
     }
 
     // ---------- Teal Pass ----------
@@ -159,11 +195,11 @@ static class SmokeTests
         Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.9.0"), "バージョン 1.9.0");
+        Check(apps.All(a => a.Version == "1.10.0"), "バージョン 1.10.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
-        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealWallet", "TealSub" }, { "TealTasks", null } };
+        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealWallet", "TealSub" }, { "TealPlan", "TealTasks" } };
         var all = AM::TealSuite.Hub.Manifest.Load(path, true);
         Check(all.Count == 7 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 7 件 (Teal Hub を含む)");
         foreach (var a in all)
@@ -184,15 +220,22 @@ static class SmokeTests
     {
         var dir = Path.Combine(tmp, "pc");
         Directory.CreateDirectory(dir);
-        var script = Path.Combine(dir, "dummy.sh");
-        File.WriteAllText(script, "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 0.2; done\n");
-        Process.Start("chmod", "+x " + script).WaitForExit();
-        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Dummy\",\"name\":\"ダミー\",\"exe\":\"dummy.sh\",\"version\":\"1.0.0\"}]}");
+        // Windows では build\Sleeper.exe (画面なし・終了の合図に応じない) を、mono ではシェル スクリプトを使う
+        bool win = WinTests.IsWindows;
+        var sleeper = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sleeper.exe");
+        var script = Path.Combine(dir, win ? "dummy.exe" : "dummy.sh");
+        if (win) File.Copy(sleeper, script, true);
+        else
+        {
+            File.WriteAllText(script, "#!/bin/sh\ntrap '' TERM\nwhile true; do sleep 0.2; done\n");
+            Process.Start("chmod", "+x " + script).WaitForExit();
+        }
+        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Dummy\",\"name\":\"ダミー\",\"exe\":\"" + Path.GetFileName(script) + "\",\"version\":\"1.0.0\"}]}");
         var apps = AM::TealSuite.Hub.Manifest.Load(Path.Combine(dir, "apps.json"));
         var ctl = new AM::TealSuite.Hub.ProcessControl();
         Check(ctl.Snapshot(apps)["Dummy"].Count == 0, "起動前は停止中");
         ctl.Start(apps[0]);
-        System.Threading.Thread.Sleep(500);
+        System.Threading.Thread.Sleep(win ? 1500 : 500);
         var pids = ctl.Snapshot(apps)["Dummy"];
         Check(pids.Count == 1, "起動後は実行中 (pid " + string.Join(",", pids) + ")");
         var sw = Stopwatch.StartNew();
@@ -203,13 +246,17 @@ static class SmokeTests
         Check(ctl.Snapshot(apps)["Dummy"].Count == 0, "終了後は停止中");
 
         // 素直に終わるアプリ
-        var quick = Path.Combine(dir, "quick.sh");
-        File.WriteAllText(quick, "#!/bin/sh\nsleep 30\n");
-        Process.Start("chmod", "+x " + quick).WaitForExit();
-        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Quick\",\"name\":\"q\",\"exe\":\"quick.sh\",\"version\":\"1.0.0\"}]}");
+        var quick = Path.Combine(dir, win ? "quick.exe" : "quick.sh");
+        if (win) File.Copy(sleeper, quick, true);
+        else
+        {
+            File.WriteAllText(quick, "#!/bin/sh\nsleep 30\n");
+            Process.Start("chmod", "+x " + quick).WaitForExit();
+        }
+        File.WriteAllText(Path.Combine(dir, "apps.json"), "{\"manifestVersion\":1,\"apps\":[{\"id\":\"Quick\",\"name\":\"q\",\"exe\":\"" + Path.GetFileName(quick) + "\",\"version\":\"1.0.0\"}]}");
         var apps2 = AM::TealSuite.Hub.Manifest.Load(Path.Combine(dir, "apps.json"));
         ctl.Start(apps2[0]);
-        System.Threading.Thread.Sleep(300);
+        System.Threading.Thread.Sleep(win ? 1500 : 300);
         var p2 = ctl.Snapshot(apps2)["Quick"];
         Check(p2.Count == 1, "2 つ目のアプリも検出");
         Check(ctl.Kill(p2) && ctl.Snapshot(apps2)["Quick"].Count == 0, "終了後に停止中へ戻る");
@@ -293,6 +340,7 @@ static class SmokeTests
         v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "Netflix", Url = "https://www.netflix.com", UserId = "taro@example.com", Password = "netflix2024", Memo = "家族で共有", Updated = DateTime.Now.AddDays(-80) });
         v.Entries.Add(new PM::TealSuite.Pass.VaultEntry { Site = "会社の VPN", Url = "", UserId = "t.yamada", Password = gen(24), Memo = "90 日ごとに変更", Updated = DateTime.Now.AddDays(-1) });
         PM::TealSuite.Pass.VaultStore.Save(v);
+        PM::TealSuite.Pass.SiteIndex.Update(v, true); // 1.10.0: Teal Hub の検索に出すサイト名だけの索引
 
         MEMO::TealSuite.Common.AppInfo.Init("TealMemo", "Teal Memo", "");
         var notes = new MEMO::TealSuite.Memo.NoteFile();

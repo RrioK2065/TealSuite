@@ -1,29 +1,47 @@
-# TealSuite のリリース
-#   main に push されたとき、apps.json の suiteVersion (例 1.5.0) のリリース v1.5.0 がまだなければ:
-#     ビルド → テスト → 全部入り zip とアップデート ファイル (.tealupdate) を作る → GitHub Releases に公開
-#   すでに同じバージョンのリリースがあれば何もしない (バージョンを上げずに push しても公開されない)。
+# TealSuite のチェックとリリース
+#   どの push・プルリクエスト・手動実行 (workflow_dispatch) でも:
+#     linux   … mono でビルド → テスト → リリース用ファイル (全部入り zip と .tealupdate) を作って成果物にする
+#     windows … 本物の Windows (windows-latest) で確かめる (DEVELOPING.md「Windows のチェック」)
+#                 - Windows の .NET Framework の csc でも全アプリとテストをビルドして、テストを全部実行
+#                   (本物の DPAPI・レジストリのテストも Windows ではここで動く)
+#                 - linux で作った配布物 (mono でビルドしたもの) でもテストを全部実行
+#                 - 各アプリを本当に起動して画面が出て落ちないか (起動のチェック) + スクリーンショット
+#                 - 前のリリースの zip に、新しい .tealupdate を前の版の TealUpdater で当てる (アップデートのチェック)
+#                   1.8.0 からも (Teal Sub → Teal Wallet の引き継ぎ)
+#                   1.9.0 からも (Teal Tasks → Teal Plan の引き継ぎ。1.10.0)
+#   main に push されたときだけ、linux と windows の両方が通ったら:
+#     publish … apps.json の suiteVersion (例 1.9.1) のリリース v1.9.1 がまだなければ GitHub Releases に公開
+#               すでに同じバージョンのリリースがあれば何もしない (バージョンを上げずに push しても公開されない)。
 #   Teal Hub は releases/latest を見て新しいバージョンをお知らせする (DEVELOPING.md「リリース」)。
 name: Release
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  TEALSUITE_NO_UPDATE_CHECK: "1"
 
 jobs:
-  release:
+  linux:
+    name: Linux (mono) ビルド・テスト・リリース用ファイル
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      TEALSUITE_NO_UPDATE_CHECK: "1"
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      skip: ${{ steps.ver.outputs.skip }}
+      prev_tag: ${{ steps.prev.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,46 +51,46 @@ jobs:
           VER=$(python3 -c 'import json; print(json.load(open("apps.json", encoding="utf-8-sig"))["suiteVersion"])')
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "v$VER はもう公開済みです。何もしません。"
+            echo "v$VER はもう公開済みです (チェックだけして、公開はしません)。"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "v$VER を公開します。"
+            echo "v$VER はまだ公開されていません。"
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: mono を入れる
-        if: steps.ver.outputs.skip == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends mono-devel xvfb xauth
 
       - name: ビルド
-        if: steps.ver.outputs.skip == 'false'
         run: sh ./build.sh
 
       - name: テスト
-        if: steps.ver.outputs.skip == 'false'
         run: xvfb-run -a sh tests/run_tests.sh
 
       - name: 前のリリースの zip を取ってくる
-        if: steps.ver.outputs.skip == 'false'
         id: prev
+        env:
+          VER: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p prev
-          PREV_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty' || true)
+          # 今のバージョンより前の、いちばん新しいリリース (今のバージョンが公開済みでも、その 1 つ前)
+          PREV_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName' | grep -vx "v$VER" | head -n 1 || true)
           if [ -n "$PREV_TAG" ]; then
             echo "前のリリース: $PREV_TAG"
             gh release download "$PREV_TAG" --repo "$GITHUB_REPOSITORY" --dir prev --pattern 'TealSuite-[0-9]*.zip'
             ZIPS=(prev/TealSuite-*.zip)
             [ -f "${ZIPS[0]}" ] || { echo "前のリリースに TealSuite-*.zip がありません"; exit 1; }
             echo "zip=${ZIPS[0]}" >> "$GITHUB_OUTPUT"
+            echo "tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "前のリリースはありません (初回)。"
             echo "zip=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: リリース用ファイルを作る
-        if: steps.ver.outputs.skip == 'false'
         env:
           PREV_ZIP: ${{ steps.prev.outputs.zip }}
         run: |
@@ -82,11 +100,173 @@ jobs:
             bash tools/release_build.sh --skip-build --out release
           fi
 
-      - name: GitHub Releases に公開
-        if: steps.ver.outputs.skip == 'false'
-        env:
-          VER: ${{ steps.ver.outputs.version }}
+      - name: リリース用ファイルを成果物にする
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows のチェック (csc ビルド・テスト・起動・アップデート)
+    needs: linux
+    runs-on: windows-latest
+    timeout-minutes: 45
+    # 手順ごとの制限。1 つのテストが止まってもジョブの 45 分までは使わない。
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VER: ${{ needs.linux.outputs.version }}
+      PREV_TAG: ${{ needs.linux.outputs.prev_tag }}
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 準備 (文字コード・環境の表示)
         run: |
+          chcp 65001 | Out-Null
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          Write-Host "TealSuite $env:VER / previous release: $env:PREV_TAG"
+          [System.Environment]::OSVersion.VersionString
+          $PSVersionTable.PSVersion.ToString()
+          Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" | Select-Object Release, Version | Format-List
+          New-Item -ItemType Directory -Force out\logs, out\screenshots | Out-Null
+
+      - name: linux で作ったリリース用ファイルを受け取る
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+
+      - name: 配布物を展開する
+        run: |
+          $zip = "release\TealSuite-$env:VER.zip"
+          # ASCII only in this script: Windows PowerShell 5.1 reads it as cp1252, and some UTF-8 bytes are smart quotes.
+          if (-not (Test-Path $zip)) { throw "missing $zip" }
+          # separate copies: tests, smoke, and an untouched tree for hash compare
+          foreach ($d in "shipped", "shipped-tests", "shipped-smoke") { Expand-Archive -Path $zip -DestinationPath $d }
+          Get-ChildItem -Recurse shipped\TealSuite | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 200
+
+      - name: ビルド (Windows の .NET Framework の csc)
+        id: build
+        timeout-minutes: 8
+        run: |
+          .\build.ps1 -Out dist-win\TealSuite -Tests -TestsDir build-win
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          .\build.ps1 -TestsOnly -Out shipped-tests\TealSuite -TestsDir build-mono
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: テスト (csc でビルドしたもの)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 12
+        run: |
+          .\tests\run_tests.ps1 -Dist dist-win\TealSuite -TestsDir build-win -Log out\logs\tests-csc.log
+          exit $LASTEXITCODE
+
+      - name: テスト (配布する mono のビルド)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 12
+        run: |
+          .\tests\run_tests.ps1 -Dist shipped-tests\TealSuite -TestsDir build-mono -Log out\logs\tests-shipped.log
+          exit $LASTEXITCODE
+
+      - name: 起動のチェック (配布するもの)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: |
+          # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
+          Start-Transcript -Path out\logs\smoke-shipped.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\smoke.ps1 -Suite shipped-smoke\TealSuite -Shots out\screenshots\shipped; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: 起動のチェック (csc でビルドしたもの)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
+          Start-Transcript -Path out\logs\smoke-csc.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\smoke.ps1 -Suite dist-win\TealSuite -Shots out\screenshots\csc; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: アップデートのチェック (前のリリースから)
+        if: ${{ !cancelled() && env.PREV_TAG != '' }}
+        timeout-minutes: 8
+        run: |
+          New-Item -ItemType Directory -Force prev | Out-Null
+          gh release download $env:PREV_TAG --repo $env:GITHUB_REPOSITORY --dir prev --pattern "TealSuite-[0-9]*.zip"
+          $zip = Get-ChildItem prev -Filter "TealSuite-*.zip" | Select-Object -First 1
+          if (-not $zip) { throw "release $env:PREV_TAG has no TealSuite-*.zip" }
+          # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
+          Start-Transcript -Path out\logs\update-prev.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\update-test.ps1 -PrevZip $zip.FullName -Package "release\TealSuite-update-$env:VER.tealupdate" -Dist shipped\TealSuite -Shots out\screenshots\update; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: アップデートのチェック (1.8.0 から。Teal Sub → Teal Wallet の引き継ぎ)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 8
+        run: |
+          New-Item -ItemType Directory -Force prev180 | Out-Null
+          gh release download v1.8.0 --repo $env:GITHUB_REPOSITORY --dir prev180 --pattern "TealSuite-1.8.0.zip"
+          # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
+          Start-Transcript -Path out\logs\update-180.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\update-test.ps1 -PrevZip prev180\TealSuite-1.8.0.zip -Package "release\TealSuite-update-$env:VER.tealupdate" -Dist shipped\TealSuite -Seed180 -Shots out\screenshots\update; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: アップデートのチェック (1.9.0 から。Teal Tasks → Teal Plan の引き継ぎ)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 8
+        run: |
+          # ASCII only in this script (Windows PowerShell 5.1 reads it as cp1252).
+          New-Item -ItemType Directory -Force prev190 | Out-Null
+          gh release download v1.9.0 --repo $env:GITHUB_REPOSITORY --dir prev190 --pattern "TealSuite-1.9.0.zip"
+          if (-not (Test-Path prev190\TealSuite-1.9.0.zip)) { throw "release v1.9.0 has no TealSuite-1.9.0.zip" }
+          # log via Start-Transcript (wrapping with 2>&1 turns stderr into errors on PowerShell 5.1)
+          Start-Transcript -Path out\logs\update-190.log -Append | Out-Null
+          $code = 1
+          try { .\tools\win\update-test.ps1 -PrevZip prev190\TealSuite-1.9.0.zip -Package "release\TealSuite-update-$env:VER.tealupdate" -Dist shipped\TealSuite -Seed19 -Shots out\screenshots\update; $code = $LASTEXITCODE } finally { Stop-Transcript | Out-Null }
+          exit $code
+
+      - name: スクリーンショットとログを成果物にする
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-check
+          path: out/
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish:
+    name: GitHub Releases に公開
+    needs: [linux, windows]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.linux.outputs.skip == 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VER: ${{ needs.linux.outputs.version }}
+    steps:
+      - name: リリース用ファイルを受け取る
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+
+      - name: 公開する
+        run: |
+          if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$VER はもう公開済みです。何もしません。"; exit 0
+          fi
           gh release create "v$VER" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

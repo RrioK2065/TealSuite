@@ -140,5 +140,68 @@ namespace TealSuite.Pass
     {
         [DataMember(Name = "generator", Order = 1)] public PasswordOptions Generator = new PasswordOptions();
         [DataMember(Name = "clipboardClearSeconds", Order = 2)] public int ClipboardClearSeconds = 30;
+        /// <summary>1.10.0: サイト名を Teal Hub の検索に出す (サイト名だけの索引 site-index.dat を作る)</summary>
+        [DataMember(Name = "searchIndex", Order = 3)] public bool SiteIndex = true;
+        [OnDeserializing] void Defaults(StreamingContext c) { ClipboardClearSeconds = 30; SiteIndex = true; }
+    }
+
+    /// <summary>
+    /// 1.10.0: Teal Hub の検索のための「サイト名だけ」の索引 (site-index.dat)。
+    ///  - 入れるのはサイト名だけ。ID・パスワード・メモ・URL・以前のパスワードは入れない
+    ///  - vault.dat とは別の追加エントロピーと印で、同じく DPAPI (CurrentUser) で暗号化する
+    ///    (vault.dat の暗号化の設定は変えない。索引から vault.dat は復号できない)
+    ///  - 保存・読み込みのたびに作り直す。設定「サイト名を検索に出す」をオフにすると消す
+    ///  - Teal Hub の HubSearch.cs が同じ印・エントロピーで読む (変えるときは両方を同時に)
+    /// </summary>
+    public static class SiteIndex
+    {
+        public const string FileName = "site-index.dat";
+        static readonly byte[] Entropy = Encoding.UTF8.GetBytes("TealSuite.TealPass.siteindex.v1");
+        static readonly byte[] Magic = Encoding.ASCII.GetBytes("PSI1");
+
+        [DataContract]
+        public class IndexFile
+        {
+            [DataMember(Name = "version", Order = 1)] public int Version = 1;
+            [DataMember(Name = "sites", Order = 2)] public List<string> Sites = new List<string>();
+        }
+
+        /// <summary>索引に入れるサイト名 (空でないもの。同じ名前は 1 つ。名前順)</summary>
+        public static List<string> SitesOf(VaultFile v)
+        {
+            if (v == null || v.Entries == null) return new List<string>();
+            return v.Entries.Where(e => e != null && !string.IsNullOrWhiteSpace(e.Site)).Select(e => e.Site.Trim())
+                .Distinct(StringComparer.CurrentCultureIgnoreCase).OrderBy(x => x, StringComparer.CurrentCulture).ToList();
+        }
+
+        public static byte[] Protect(List<string> sites)
+        {
+            var plain = DataStore.ToJson(new IndexFile { Sites = sites ?? new List<string>() });
+            try
+            {
+                var enc = ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser);
+                var all = new byte[Magic.Length + enc.Length];
+                Buffer.BlockCopy(Magic, 0, all, 0, Magic.Length);
+                Buffer.BlockCopy(enc, 0, all, Magic.Length, enc.Length);
+                return all;
+            }
+            finally { Array.Clear(plain, 0, plain.Length); }
+        }
+
+        /// <summary>索引を作り直す (on = false なら消す)。失敗してもアプリは止めない</summary>
+        public static void Update(VaultFile v, bool on)
+        {
+            try
+            {
+                if (!on) { Delete(); return; }
+                DataStore.WriteBytes(FileName, Protect(SitesOf(v)));
+            }
+            catch (Exception ex) { DataStore.Log("site index: " + ex.Message); }
+        }
+
+        public static void Delete()
+        {
+            try { var p = DataStore.PathOf(FileName); if (File.Exists(p)) File.Delete(p); } catch (Exception ex) { DataStore.Log("site index delete: " + ex.Message); }
+        }
     }
 }

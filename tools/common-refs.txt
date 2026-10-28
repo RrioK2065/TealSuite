@@ -1,0 +1,8 @@
+# 全アプリ共通の参照 DLL (1 行に 1 つ)。build.sh・build.bat・build.ps1 がこのファイルを読む
+# アプリごとの追加の参照は src/Apps/<id>/refs.txt
+System.dll
+System.Core.dll
+System.Drawing.dll
+System.Windows.Forms.dll
+System.Runtime.Serialization.dll
+System.Xml.dll

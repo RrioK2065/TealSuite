@@ -56,13 +56,22 @@ namespace TealSuite.Pass
 
         public VaultFile Vault { get { return vault; } }
 
+        static void Boot(string stage)
+        {
+            if (Environment.GetEnvironmentVariable("TEALSUITE_BOOTLOG") != "1") return;
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "tealsuite-boot.log"), DateTime.Now.ToString("HH:mm:ss.fff") + " " + stage + "\r\n"); }
+            catch { }
+        }
+
         public MainForm()
         {
+            Boot("MainForm");
             Theme.ApplyForm(this);
             Text = AppInfo.WindowTitle;
             MinimumSize = Theme.S(960, 600);
             KeyPreview = true;
             settings = DataStore.LoadQuiet(SettingsFile, () => new PmSettings());
+            AppHost.OpenRequested = r => OpenFromRequest(r);
             if (settings.Generator == null) settings.Generator = new PasswordOptions();
             settings.Generator.Normalize();
             clip.Seconds = Math.Max(5, Math.Min(300, settings.ClipboardClearSeconds));
@@ -75,20 +84,30 @@ namespace TealSuite.Pass
             btnCheck.Click += (s, e) => ShowHealth();
             new ToolTip().SetToolTip(btnCheck, "使い回し・弱い・1 年以上変えていないパスワードを調べます");
             var btnMore = header.AddAction(new FlatButton("その他 ▾", ButtonKind.Secondary)).FitWidth(90);
+            var btnSettings = header.AddAction(new FlatButton("設定", ButtonKind.Secondary)).FitWidth(72);
+            btnSettings.Click += (s, e) => OpenSettings();
+            new ToolTip().SetToolTip(btnSettings, "クリップボードを消すまでの時間・Teal Hub の検索");
             moreMenu.Font = Theme.Body; moreMenu.ShowImageMargin = false;
             btnMore.Click += (s, e) => { BuildMoreMenu(); moreMenu.Show(btnMore, new Point(0, btnMore.Height)); };
 
-            var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Padding = Theme.P(Theme.Pad), BackColor = Theme.Background };
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(340)));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(280)));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            var gen = BuildGenerator(); gen.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var lst = BuildList(); lst.Margin = new Padding(0, 0, Theme.S(10), 0);
-            var det = BuildDetail(); det.Margin = new Padding(0);
-            grid.Controls.Add(gen, 0, 0); grid.Controls.Add(lst, 1, 0); grid.Controls.Add(det, 2, 0);
+            // TableLayoutPanel は子の希望幅と列幅がぶつかると、Windows ではレイアウトが再入してスタックが溢れる。
+            // 左から 生成 | 一覧 | 詳細。後から Add したものから順に端へ付く。
+            var grid = new Panel { Dock = DockStyle.Fill, Padding = Theme.P(Theme.Pad), BackColor = Theme.Background };
+            var gen = BuildGenerator(); gen.Dock = DockStyle.Left; gen.Width = Theme.S(340);
+            var gap1 = new Panel { Dock = DockStyle.Left, Width = Theme.S(10), BackColor = Theme.Background };
+            var lst = BuildList(); lst.Dock = DockStyle.Left; lst.Width = Theme.S(280);
+            var gap2 = new Panel { Dock = DockStyle.Left, Width = Theme.S(10), BackColor = Theme.Background };
+            var det = BuildDetail(); det.Dock = DockStyle.Fill;
+            Boot("grid built");
+            grid.Controls.Add(det);
+            grid.Controls.Add(gap2);
+            grid.Controls.Add(lst);
+            grid.Controls.Add(gap1);
+            grid.Controls.Add(gen);
+            Boot("grid added");
 
             Controls.Add(grid);
+            Boot("controls added");
             Controls.Add(footer);
             Controls.Add(header);
 
@@ -97,9 +116,10 @@ namespace TealSuite.Pass
             uiTimer.Tick += (s, e) => UpdateFooter();
             clip.Cleared += () => { lastAction = "クリップボードを消去しました"; UpdateFooter(); };
             KeyDown += OnKey;
-            Load += (s, e) => { LoadVault(); Regenerate(); uiTimer.Start(); };
+            Load += (s, e) => { Boot("Load"); LoadVault(); Boot("vault"); Regenerate(); Boot("generated"); uiTimer.Start(); };
             FormClosing += (s, e) => SaveSettings();
             FormClosed += (s, e) => clip.Dispose();   // 常駐中に隠すだけのときは、コピーの自動消去を続ける
+            Boot("MainForm done");
         }
 
         // ================= 生成 =================
@@ -131,7 +151,9 @@ namespace TealSuite.Pass
 
             var o = settings.Generator;
             tUpper.Checked = o.Upper; tLower.Checked = o.Lower; tDigits.Checked = o.Digits; tSymbols.Checked = o.Symbols; tAmbig.Checked = o.ExcludeAmbiguous;
-            var toggles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Theme.Surface, Padding = Theme.P(0, 4, 0, 0) };
+            // AutoSize の FlowLayoutPanel を Dock=Top にすると、Windows のレイアウトが再入してスタックが溢れる
+            var toggles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = false, BackColor = Theme.Surface, Padding = Theme.P(0, 4, 0, 0) };
+            int togglesH = toggles.Padding.Vertical;
             foreach (var t in new[] { tUpper, tLower, tDigits, tSymbols, tAmbig })
             {
                 var tt = t;
@@ -141,13 +163,16 @@ namespace TealSuite.Pass
                     if (built) Regenerate();
                 };
                 toggles.Controls.Add(tt);
+                togglesH += tt.GetPreferredSize(Size.Empty).Height + tt.Margin.Vertical;
             }
+            toggles.Height = togglesH;
             var hint = new Label { Text = "Shift を押しながらドラッグで 4 文字ずつ", Font = Theme.Small, ForeColor = Theme.Disabled, Height = Theme.Small.Height + Theme.S(4), UseMnemonic = false };
             Ly.Stack(card, genFrame, Ui.Spacer(8), genStrength, Ui.Spacer(4), row, Ui.Spacer(10), lenRow, lenSlider, hint, Ly.SectionLabel("使う文字"), toggles);
             built = true;
             return card;
         }
         bool built;
+        bool updatingFilter;
 
         public PasswordOptions CurrentOptions()
         {
@@ -192,7 +217,7 @@ namespace TealSuite.Pass
             listCard.Controls.Add(new InputFrame(search) { Dock = DockStyle.Top });
             listCard.Controls.Add(Ui.Spacer(6));
             FilterBox.Dock = DockStyle.Top;
-            FilterBox.SelectedIndexChanged += (s, e) => RefreshList(null);
+            FilterBox.SelectedIndexChanged += (s, e) => { if (!updatingFilter) RefreshList(null); };
             listCard.Controls.Add(FilterBox);
             return listCard;
         }
@@ -427,7 +452,7 @@ namespace TealSuite.Pass
 
         bool Persist()
         {
-            try { VaultStore.Save(vault); return true; }
+            try { VaultStore.Save(vault); SiteIndex.Update(vault, settings.SiteIndex); return true; }
             catch (Exception ex)
             {
                 DataStore.Log("vault save: " + ex);
@@ -442,6 +467,7 @@ namespace TealSuite.Pass
             {
                 vault = VaultStore.Load();
                 vaultReady = true;
+                SiteIndex.Update(vault, settings.SiteIndex);
             }
             catch (Exception ex)
             {
@@ -458,6 +484,48 @@ namespace TealSuite.Pass
             }
             RefreshList(null);
             lastAction = vault.Entries.Count + " 件を読み込みました";
+            UpdateFooter();
+            if (pendingOpen != null) { var r = pendingOpen; pendingOpen = null; OpenFromRequest(r); }
+        }
+
+        // ================= 1.10.0: Teal Hub との連携 =================
+
+        OpenRequest pendingOpen;
+        public PmSettings Settings { get { return settings; } }
+
+        /// <summary>Teal Hub の検索から「このサイトを開いて」と頼まれた (key はサイト名)。見つかったら true</summary>
+        public bool OpenFromRequest(OpenRequest r)
+        {
+            if (r == null || r.Kind != "site" || string.IsNullOrEmpty(r.Key)) return false;
+            if (!vaultReady) { pendingOpen = r; return false; }
+            var key = r.Key.Trim();
+            var en = vault.Entries.Where(x => string.Equals((x.Site ?? "").Trim(), key, StringComparison.CurrentCultureIgnoreCase))
+                .OrderByDescending(x => x.Favorite).ThenByDescending(x => x.Updated).FirstOrDefault();
+            if (en == null) { lastAction = "「" + key + "」は見つかりませんでした"; UpdateFooter(); return false; }
+            SelectEntry(en);
+            list.Focus();
+            lastAction = "「" + en.Site + "」を開きました"; UpdateFooter();
+            return true;
+        }
+
+        /// <summary>テスト用: 設定のダイアログの代わり (編集してから true で保存)</summary>
+        public Func<PmSettings, bool> SettingsHook;
+
+        public void OpenSettings()
+        {
+            var copy = new PmSettings { Generator = settings.Generator, ClipboardClearSeconds = settings.ClipboardClearSeconds, SiteIndex = settings.SiteIndex };
+            bool ok;
+            if (SettingsHook != null) ok = SettingsHook(copy);
+            else using (var f = new PassSettingsForm(copy)) ok = f.ShowDialog(this) == DialogResult.OK;
+            if (!ok) return;
+            settings.ClipboardClearSeconds = Math.Max(5, Math.Min(300, copy.ClipboardClearSeconds));
+            clip.Seconds = settings.ClipboardClearSeconds;
+            bool changed = settings.SiteIndex != copy.SiteIndex;
+            settings.SiteIndex = copy.SiteIndex;
+            SaveSettings();
+            if (vaultReady) SiteIndex.Update(vault, settings.SiteIndex);
+            else if (!settings.SiteIndex) SiteIndex.Delete();
+            lastAction = !changed ? "設定を保存しました" : settings.SiteIndex ? "サイト名を Teal Hub の検索に出すようにしました" : "サイト名を Teal Hub の検索に出さないようにしました (索引を消しました)";
             UpdateFooter();
         }
 
@@ -484,7 +552,10 @@ namespace TealSuite.Pass
             bool same = true;
             for (int i = 0; i < 3; i++) if ((string)FilterBox.Items[i] != labels[i]) same = false;
             if (same) return;
-            for (int i = 0; i < 3; i++) FilterBox.Items[i] = labels[i];
+            // Windows では Items の書き換えが SelectedIndexChanged を起こし、RefreshList に戻ってスタックが溢れる
+            updatingFilter = true;
+            try { for (int i = 0; i < 3; i++) FilterBox.Items[i] = labels[i]; }
+            finally { updatingFilter = false; }
         }
 
         public void ToggleFavorite()

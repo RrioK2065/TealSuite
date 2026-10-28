@@ -6,7 +6,8 @@ rem    build.bat            build all apps
 rem    build.bat TealMemo      build only the given app
 rem    (update packages: build.sh package-update, needs python3; see DEVELOPING.md)
 rem  Output: dist\TealSuite\  (TealHub.exe, TealUpdater.exe, apps.json, README.txt, apps\<AppId>\<AppId>.exe)
-rem  Note: keep REFS identical to COMMON_REFS in build.sh.
+rem  Common references: tools\common-refs.txt (shared with build.sh and build.ps1).
+rem  build.ps1 does the same and can also build and run the tests (used by GitHub Actions).
 rem ===================================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -14,7 +15,8 @@ set "CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if not exist "%CSC%" set "CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if not exist "%CSC%" ( echo csc.exe not found. .NET Framework 4.x is required. & exit /b 1 )
 set "OUT=dist\TealSuite"
-set "REFS=/r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.Xml.dll"
+set "REFS="
+for /f "usebackq eol=# tokens=*" %%R in ("tools\common-refs.txt") do set "REFS=!REFS! /r:%%R"
 set FAILED=0
 set BUILT=0
 if not exist "%OUT%\apps" mkdir "%OUT%\apps"
@@ -47,7 +49,7 @@ if /i "%ID%"=="TealHub" set "DEST=%OUT%"
 if /i "%ID%"=="TealUpdater" set "DEST=%OUT%"
 if not exist "%DEST%" mkdir "%DEST%"
 echo == %ID%
-"%CSC%" /nologo /target:winexe /optimize+ /codepage:65001 %REFS% !EXTRA! /win32icon:"assets\icons\%ID%.ico" /resource:assets\icons\%ID%.ico,AppIcon.ico /resource:assets\icons\%ID%.png,AppIcon.png /out:"%DEST%\%ID%.exe" "src\Common\*.cs" "src\Apps\%ID%\*.cs"
+"%CSC%" /nologo /noconfig /target:winexe /optimize+ /codepage:65001 /nowarn:1591 %REFS% !EXTRA! /win32icon:"assets\icons\%ID%.ico" /resource:assets\icons\%ID%.ico,AppIcon.ico /resource:assets\icons\%ID%.png,AppIcon.png /out:"%DEST%\%ID%.exe" "src\Common\*.cs" "src\Apps\%ID%\*.cs"
 if errorlevel 1 ( set FAILED=1 & exit /b 1 )
 copy /y "assets\icons\%ID%.ico" "%DEST%\" >nul
 set /a BUILT+=1

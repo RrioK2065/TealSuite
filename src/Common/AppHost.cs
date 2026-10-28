@@ -27,6 +27,8 @@ namespace TealSuite.Common
         public static Action ReloadRequested;
         /// <summary>Teal Hub で登録したショートカットが押されたときに呼ばれる。既定は ShowRequested と同じ。</summary>
         public static Action HotkeyRequested;
+        /// <summary>1.10.0: ほかのアプリから「この項目を開いて」と頼まれたとき (画面を前に出したあとで呼ばれる)。起動したときの頼みごとも、画面ができてから呼ばれる</summary>
+        public static Action<OpenRequest> OpenRequested;
         /// <summary>すでに起動していたとき (2 回目の起動の側)、起動中のほうに知らせる前に呼ばれる。Teal Hub の --settings で使う</summary>
         public static Action SecondInstance;
 
@@ -76,8 +78,8 @@ namespace TealSuite.Common
                 return;
             }
 
-            EventWaitHandle exitEvt = null, showEvt = null, reloadEvt = null, hotkeyEvt = null;
-            RegisteredWaitHandle exitWait = null, showWait = null, reloadWait = null, hotkeyWait = null;
+            EventWaitHandle exitEvt = null, showEvt = null, reloadEvt = null, hotkeyEvt = null, openEvt = null;
+            RegisteredWaitHandle exitWait = null, showWait = null, reloadWait = null, hotkeyWait = null, openWait = null;
             try
             {
                 // 二重起動でないと確定してから旧データを引き継ぐ (フォームがデータを読む前)
@@ -106,7 +108,16 @@ namespace TealSuite.Common
                 if (hotkeyEvt != null)
                     hotkeyWait = ThreadPool.RegisterWaitForSingleObject(hotkeyEvt, (st, to) => OnUi(OnHotkey), null, -1, false);
 
-                Application.Run(createContext());
+                openEvt = TryCreateEvent(AppInfo.OpenEventName(id));
+                if (openEvt != null)
+                    openWait = ThreadPool.RegisterWaitForSingleObject(openEvt, (st, to) => OnUi(() => DispatchOpen(true)), null, -1, false);
+
+                var ctx = createContext();
+                // 起動したときに頼みごとがあれば、画面ができてから開く
+                EventHandler idle = null;
+                idle = (s, e) => { Application.Idle -= idle; DispatchOpen(false); };
+                Application.Idle += idle;
+                Application.Run(ctx);
             }
             finally
             {
@@ -114,12 +125,27 @@ namespace TealSuite.Common
                 if (showWait != null) showWait.Unregister(null);
                 if (reloadWait != null) reloadWait.Unregister(null);
                 if (hotkeyWait != null) hotkeyWait.Unregister(null);
+                if (openWait != null) openWait.Unregister(null);
+                if (openEvt != null) openEvt.Dispose();
                 if (hotkeyEvt != null) hotkeyEvt.Dispose();
                 if (reloadEvt != null) reloadEvt.Dispose();
                 if (exitEvt != null) exitEvt.Dispose();
                 if (showEvt != null) showEvt.Dispose();
                 if (marshal != null) marshal.Dispose();
                 if (mutex != null) { try { mutex.ReleaseMutex(); } catch { } mutex.Dispose(); }
+            }
+        }
+
+        /// <summary>自分あての「開いて」を読んで処理する (show = true なら、頼みごとがなくても画面を前に出す)</summary>
+        public static void DispatchOpen(bool show)
+        {
+            OpenRequest r = null;
+            try { r = OpenRequest.Take(AppInfo.Id); } catch { }
+            if (r == null && !show) return;
+            try { if (ShowRequested != null) ShowRequested(); else ActivateMainForm(); } catch (Exception ex) { DataStore.Log("open show: " + ex.Message); }
+            if (r != null && OpenRequested != null)
+            {
+                try { OpenRequested(r); } catch (Exception ex) { DataStore.Log("open " + r + ": " + ex.Message); }
             }
         }
 

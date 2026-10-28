@@ -1,4 +1,4 @@
-// Teal Tasks - ダイアログ: 追加・編集 / 設定
+// Teal Plan - ダイアログ: 追加・編集 / 設定
 using System;
 using System.Drawing;
 using System.Linq;
@@ -7,6 +7,12 @@ using TealSuite.Common;
 
 namespace TealSuite.Tasks
 {
+    /// <summary>1.10.0: タグの候補 (Teal Memo と Teal Plan の両方。MainForm が決める)</summary>
+    public static class PlanTagSource
+    {
+        public static Func<System.Collections.Generic.IEnumerable<string>> Get = () => SuiteTags.Collect(SuiteRead.PlanId, null);
+    }
+
     /// <summary>タスクの追加・編集</summary>
     public class TaskEditForm : Form
     {
@@ -19,6 +25,7 @@ namespace TealSuite.Tasks
         readonly WrapLabel error = new WrapLabel();
         /// <summary>保存したときに「完了」にチェックが入っていたか (完了・繰り返しの処理は呼び出し側で)</summary>
         public bool WantDone;
+        public TagSuggest Tags { get; private set; }
 
         public TaskEditForm(TaskItem task, bool isNew)
         {
@@ -52,6 +59,7 @@ namespace TealSuite.Tasks
 
             Ui.SetCue(tbTags, "例: 仕事 家 (空白で区切る)");
             grid.Add("タグ", new InputFrame(tbTags));
+            Tags = TagSuggest.Attach(tbTags, PlanTagSource.Get, false);
             grid.Add("くり返し (完了すると次の回ができます)", cbRepeat);
 
             // 小タスク
@@ -152,6 +160,7 @@ namespace TealSuite.Tasks
     {
         public readonly ToggleSwitch swRemind = new ToggleSwitch("期限が近づいたらお知らせする");
         public readonly ToggleSwitch swMorning = new ToggleSwitch("その日最初に「今日のタスク」をまとめてお知らせする");
+        public readonly ToggleSwitch swWallet = new ToggleSwitch("Teal Wallet の支払い日をカレンダーに出す");
         public readonly ComboBox cbMinutes;
         static readonly int[] MinuteChoices = { 0, 5, 10, 15, 30, 60, 120 };
 
@@ -167,7 +176,7 @@ namespace TealSuite.Tasks
             grid.AddRaw(swMorning, 1);
             var note = new WrapLabel
             {
-                Text = "お知らせは、Teal Tasks が起動している間だけ出ます (画面右下の通知)。\n" +
+                Text = "お知らせは、Teal Plan が起動している間だけ出ます (画面右下の通知)。\n" +
                        (resident ? "いまは常駐オンなので、×で閉じても通知領域に残ってお知らせします。パソコンを起動したときから働かせるには、Teal Hub の設定で「スタートアップ」をオンにしてください。"
                                  : "いまは常駐オフなので、閉じている間はお知らせできません。Teal Hub の設定で「常駐」をオンにしてください。"),
                 Font = Theme.Small, ForeColor = resident ? Theme.SubText : Theme.Warning
@@ -176,6 +185,14 @@ namespace TealSuite.Tasks
             var hub = new FlatButton("常駐・スタートアップ・ショートカット (Teal Hub)…", ButtonKind.Secondary).FitWidth(120);
             hub.Click += (s, e) => HubLink.OpenSettings(this, AppInfo.Id);
             grid.AddRaw(FormGrid.Inline(hub), 1);
+
+            grid.Add(null, new WrapLabel { Text = "カレンダー", Font = Theme.Title });
+            grid.AddRaw(swWallet, 1);
+            grid.Add(null, new WrapLabel
+            {
+                Text = "Teal Wallet のサブスクの支払い日 (💳) と無料期間の終わり (⚠) を、カレンダーと予定の一覧に出します。読むだけで、Teal Wallet のデータは変えません。クリックすると Teal Wallet で開きます。",
+                Font = Theme.Small, ForeColor = Theme.SubText
+            });
 
             grid.Add(null, new WrapLabel { Text = "データ", Font = Theme.Title });
             var csv = new FlatButton("CSV に書き出す…", ButtonKind.Secondary).FitWidth(100);
@@ -189,7 +206,7 @@ namespace TealSuite.Tasks
             var cancel = new FlatButton("キャンセル", ButtonKind.Secondary).FitWidth(88);
             ok.Click += (s, e) =>
             {
-                st.Remind = swRemind.Checked; st.Morning = swMorning.Checked;
+                st.Remind = swRemind.Checked; st.Morning = swMorning.Checked; st.ShowWallet = swWallet.Checked;
                 int mi = cbMinutes.SelectedIndex;
                 if (mi >= 0 && mi < MinuteChoices.Length) st.RemindMinutes = MinuteChoices[mi];
                 DialogResult = DialogResult.OK;
@@ -198,7 +215,7 @@ namespace TealSuite.Tasks
             grid.AddRaw(DialogKit.Buttons(ok, cancel), 1);
             Controls.Add(grid);
 
-            swRemind.Checked = st.Remind; swMorning.Checked = st.Morning;
+            swRemind.Checked = st.Remind; swMorning.Checked = st.Morning; swWallet.Checked = st.ShowWallet;
             int idx = Array.IndexOf(MinuteChoices, st.RemindMinutes);
             if (idx < 0) { cbMinutes.Items.Add(Fmt.Minutes(st.RemindMinutes) + "前"); idx = cbMinutes.Items.Count - 1; }
             cbMinutes.SelectedIndex = idx;

@@ -79,6 +79,8 @@ namespace TealSuite.Common
         public static string ReloadEventName(string appId) { return @"Local\TealSuite." + appId + ".Reload"; }
         /// <summary>Teal Hub で登録したショートカットが押されたとき (1.6.0 から。Teal Clip は履歴、Teal Volume は開閉、ほかは前面へ)</summary>
         public static string HotkeyEventName(string appId) { return @"Local\TealSuite." + appId + ".Hotkey"; }
+        /// <summary>1.10.0: ほかのアプリ (Teal Hub の「今日」・検索、Teal Plan のカレンダー) から「この項目を開いて」と頼まれたとき (OpenRequest.cs)</summary>
+        public static string OpenEventName(string appId) { return @"Local\TealSuite." + appId + ".Open"; }
         public static string MutexName(string appId) { return @"Local\TealSuite." + appId + ".Instance"; }
     }
 }

@@ -93,9 +93,21 @@ static class ShortcutTests
             Check(mgr.DuplicateOf(memo, P("Alt+H")) == self, "Teal Hub の Alt+H とも重複を調べる");
             var bad = memo.Apply(C.HotkeySpec.Of(C.HotMods.Ctrl, Keys.C));
             Check(bad != null && memo.Current.IsEmpty, "使えない組み合わせは断る: " + bad);
-            taken.Add("Alt+M");
-            var used = memo.Apply(P("Alt+M"));
-            Check(used != null && used.Contains("ほかのアプリ") && memo.Current.IsEmpty, "ほかのソフトが使用中なら元のまま: " + used);
+            // Windows では FakeRegister を使わず、本物の RegisterHotKey で Alt+M を先に押さえる
+            C.GlobalHotkey blocker = null;
+            if (C.AppInfo.IsWindows)
+            {
+                blocker = new C.GlobalHotkey();
+                var held = blocker.Register(P("Alt+M"));
+                Check(held == null && blocker.Active, "テスト用に Alt+M を先に登録 (" + held + ")");
+            }
+            else taken.Add("Alt+M");
+            try
+            {
+                var used = memo.Apply(P("Alt+M"));
+                Check(used != null && used.Contains("ほかのアプリ") && memo.Current.IsEmpty, "ほかのソフトが使用中なら元のまま: " + used);
+            }
+            finally { if (blocker != null) blocker.Dispose(); }
             Check(memo.Apply(P("Alt+Shift+M")) == null && mgr.IsActive(memo), "別のキーなら登録できる");
 
             // 解除 = なし (初期設定に戻さない)
@@ -304,6 +316,9 @@ static class ShortcutTests
             mgr.SimulatePress(mgr.Self);
             Check(f.Visible && !f.IsSettingsShown, "後ろにあれば前面に出す (一覧の画面)");
 
+            // 1.10.0: はじめは「今日」。カードは「アプリ」のタブで出す
+            Check(f.ViewTabs.SelectedIndex == 0 && f.IsHomeShown && !f.CardFor("TealClip").Visible, "はじめは「今日」の画面 (アプリのカードは「アプリ」のタブ)");
+            f.ViewTabs.SelectedIndex = 1;
             // カード: 設定の要約と「設定」ボタン
             var clipCard = f.CardFor("TealClip"); var passCard = f.CardFor("TealPass"); var volCard = f.CardFor("TealVolume");
             Check(f.Cards.Count == 6 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "6 つのカードすべてに「設定」ボタン");
@@ -316,7 +331,7 @@ static class ShortcutTests
             clipCard.BtnSettings.PerformClick();
             var page = f.SettingsPage;
             Check(f.IsSettingsShown && page.AppId == "TealClip" && !passCard.Visible, "「設定」を押すと画面が Teal Clip の設定ページに切り替わる");
-            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.9.0"), "見出し: " + page.TitleText + " / " + page.SubText);
+            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.10.0"), "見出し: " + page.TitleText + " / " + page.SubText);
             Check(page.StatusText.Contains("Ctrl + Shift + V") && page.Box.Value.ToString() == "Ctrl+Shift+V", "ショートカット欄に今のキー (" + page.StatusText + ")");
             Check(page.ResidentSwitch.Checked && page.ResidentSwitch.Enabled && page.StartupSwitch.Enabled && !page.StartupSwitch.Checked, "常駐はオン、スタートアップは選べる (今はオフ)");
             Check(page.ResidentNoteText.Contains("記録を続けます"), "Teal Clip は常駐の意味を説明");

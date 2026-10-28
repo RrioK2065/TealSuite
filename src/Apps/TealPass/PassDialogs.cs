@@ -137,4 +137,50 @@ namespace TealSuite.Pass
             Controls.Add(outer);
         }
     }
+
+    /// <summary>1.10.0: Teal Pass の設定 (クリップボードを消すまでの時間・Teal Hub の検索)</summary>
+    public class PassSettingsForm : Form
+    {
+        public readonly ToggleSwitch swIndex = new ToggleSwitch("サイト名を検索に出す");
+        public readonly ComboBox cbClear;
+        static readonly int[] SecondChoices = { 10, 15, 30, 60, 120, 300 };
+
+        public PassSettingsForm(PmSettings st)
+        {
+            DialogKit.Setup(this, AppInfo.TitleFor("設定"));
+            var grid = new FormGrid(1, 460);
+            grid.Add(null, new WrapLabel { Text = "コピー", Font = Theme.Title });
+            cbClear = Lay.Combo(SecondChoices.Select(x => x < 60 ? x + " 秒後" : (x / 60) + " 分後").ToArray());
+            cbClear.Width = Theme.S(180);
+            grid.Add("コピーしたパスワードをクリップボードから消す", cbClear);
+
+            grid.Add(null, new WrapLabel { Text = "Teal Hub の検索", Font = Theme.Title });
+            grid.AddRaw(swIndex, 1);
+            grid.Add(null, new WrapLabel
+            {
+                Text = "オンにすると、Teal Hub の検索でサイト名 (例: 「Amazon」) が見つかるようになり、ダブルクリックでこのアプリの登録を開けます。\n" +
+                       "検索に使うのはサイト名だけです。ID・パスワード・メモ・URL は検索に出しません。\n" +
+                       "サイト名の一覧は、このパソコンのこの Windows ユーザーだけが読めるように暗号化して保存します。オフにすると、その一覧を消します。",
+                Font = Theme.Small, ForeColor = Theme.SubText
+            });
+
+            var ok = new FlatButton("OK", ButtonKind.Primary).FitWidth(88);
+            var cancel = new FlatButton("キャンセル", ButtonKind.Secondary).FitWidth(88);
+            ok.Click += (s, e) =>
+            {
+                st.SiteIndex = swIndex.Checked;
+                int i = cbClear.SelectedIndex;
+                if (i >= 0 && i < SecondChoices.Length) st.ClipboardClearSeconds = SecondChoices[i];
+                DialogResult = DialogResult.OK;
+            };
+            cancel.DialogResult = DialogResult.Cancel; CancelButton = cancel;
+            grid.AddRaw(DialogKit.Buttons(ok, cancel), 1);
+            Controls.Add(grid);
+
+            swIndex.Checked = st.SiteIndex;
+            int idx = Array.IndexOf(SecondChoices, st.ClipboardClearSeconds);
+            if (idx < 0) { cbClear.Items.Add(st.ClipboardClearSeconds + " 秒後"); idx = cbClear.Items.Count - 1; }
+            cbClear.SelectedIndex = idx;
+        }
+    }
 }

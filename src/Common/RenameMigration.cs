@@ -1,4 +1,4 @@
-// TealSuite 共通: アプリの名前 (ID) が変わったときの引き継ぎ (1.9.0 から。Teal Sub → Teal Wallet)
+// TealSuite 共通: アプリの名前 (ID) が変わったときの引き継ぎ (1.9.0 から。Teal Sub → Teal Wallet、1.10.0 で Teal Tasks → Teal Plan)
 //  - データ        … DataStore.MigrateLegacyData() が %APPDATA%\TealSuite\<旧ID>\ もコピーする (元は消さない = 1.8.0 に戻しても使える)
 //  - Hub の設定    … app-settings.json の旧 ID の項目 (ショートカット・常駐) を新しい ID に付け替える
 //  - スタートアップ … HKCU\…\Run の "TealSuite.<旧ID>" を消して "TealSuite.<新ID>" (新しい exe) に登録し直す
@@ -17,7 +17,29 @@ namespace TealSuite.Common
         public static readonly Dictionary<string, string> OldNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "TealSub", "Teal Sub" },
+            { "TealTasks", "Teal Tasks" },
         };
+
+        /// <summary>名前が変わった版 (前の ID → 版)。Teal Hub の「〇〇 は △△ になりました」のお知らせを 1 回だけ出すのに使う</summary>
+        public static readonly Dictionary<string, string> RenamedIn = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "TealSub", "1.9.0" },
+            { "TealTasks", "1.10.0" },
+        };
+
+        /// <summary>"1.10.0" と "1.9.1" を数字ごとに比べる</summary>
+        public static int CompareVersions(string a, string b)
+        {
+            var x = (a ?? "").Split('.'); var y = (b ?? "").Split('.');
+            for (int i = 0; i < Math.Max(x.Length, y.Length); i++)
+            {
+                int p = 0, q = 0;
+                if (i < x.Length) int.TryParse(x[i], out p);
+                if (i < y.Length) int.TryParse(y[i], out q);
+                if (p != q) return p < q ? -1 : 1;
+            }
+            return 0;
+        }
 
         public static string OldName(string id) { string n; return OldNames.TryGetValue(id ?? "", out n) ? n : id; }
 

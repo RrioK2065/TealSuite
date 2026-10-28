@@ -8,8 +8,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Pass - パスワード管理")]
 [assembly: AssemblyDescription("パスワードの生成・保管・管理")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.9.0.0")]
-[assembly: AssemblyFileVersion("1.9.0.0")]
+[assembly: AssemblyVersion("1.10.0.0")]
+[assembly: AssemblyFileVersion("1.10.0.0")]
 
 namespace TealSuite.Pass
 {

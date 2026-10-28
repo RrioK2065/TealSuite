@@ -1,2 +1,4 @@
 # 1.8.0: データのバックアップ (zip) に System.IO.Compression を使う
 System.IO.Compression.dll
+# 1.10.0: Teal Pass のサイト名の索引 (DPAPI) を検索のために読む
+System.Security.dll

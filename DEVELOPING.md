@@ -11,7 +11,7 @@ Windows 用の小さなアプリ群「Teal ○○」です。すべて **C# 5 / 
 | `TealClip` | Teal Clip | コピー履歴 | ClipboardHistory |
 | `TealVolume` | Teal Volume | 音量操作 | VolumeMixer |
 | `TealWallet` | Teal Wallet | サブスク＆買い物リスト | TealSub (1.7.0〜1.8.0 の Teal Sub。1.9.0 で名前を変更) |
-| `TealTasks` | Teal Tasks | タスク管理＆カレンダー | (なし。1.7.0 で追加) |
+| `TealPlan` | Teal Plan | タスク＆予定 | TealTasks (1.7.0〜1.9.x の Teal Tasks。1.10.0 で名前を変更) |
 
 ## フォルダ構成
 
@@ -163,13 +163,26 @@ Teal Hub (TealHub.exe) は、**自分と同じフォルダの apps.json** を読
 - バックアップの復元 (`HubBackup.FolderMap` / `Restore` の renames。HubData.cs) … 1.8.0 のバックアップの `TealSub/` は `TealWallet/` に戻す (復元の前に今のデータを before-restore-*.zip に残すのは 1.8.0 と同じ)
 - テストは tests/V190Tests.cs の RunRename / RunUpdate
 
+#### 1.10.0 の Teal Tasks → Teal Plan
+1.9.0 と同じしくみ (`LegacyIds = { "TealTasks" }`、apps.json の `legacyIds`、`RenameMigration.OldNames`)。足したのは次のとおり。
+
+- `RenameMigration.RenamedIn` … 旧 ID ごとに名前が変わった版 (`TealSub` 1.9.0 / `TealTasks` 1.10.0)
+- `HubMigration.PendingNotices` … 「Teal Tasks は Teal Plan になりました」を **1 回だけ** 出す。出したものは `TealHub\rename-notices.txt` (1 行 `旧ID>新ID`) に覚える。
+  設定の引き継ぎがあったときか、旧 ID のデータ フォルダーがある (前の名前で使っていた) ときだけ出す。
+  このファイルがまだ無い (1.9.x 以前から上げた) ときは、今の suiteVersion より前の版の変更 (Teal Sub → Teal Wallet) は出したことにする
+- .tealupdate の `delete` に `apps/TealTasks/*`。`tools/retired-files.txt` にも書いてあるので、1.8.0 以前から一気に上げても残らない
+- バックアップの復元 … `TealTasks/` は `TealPlan/` に戻す (`HubBackup.FolderMap`)
+- Windows のチェック (`tools/win/update-test.ps1`) … 前の版が 1.9.x なら (または `-Seed19` / `-Seed180`) Teal Tasks のデータ・Hub の設定・Run を置いてから当て、
+  Teal Plan に引き継がれること・apps.json に TealTasks が無いこと・rename-notices.txt に記録されたことを確かめる
+- テストは tests/V1100Tests.cs の RunRename / RunUpdate
+
 DPAPI の追加エントロピー (`Vault.cs` の `"AppSuite.PasswordMaker.vault.v1"`、`History.cs` の `"AppSuite.ClipboardHistory.v1"`)
 は 1.0 のデータを復号するために **名前を変えても変更しない** でください。
 
 ### C# の書き方の制約
 Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `-langversion:5` を付けています。
 `?.`、`$"..."`、`nameof`、`=>` のメンバー、getter のみの自動プロパティ、`out var` は使えません。
-ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume` / `TealSuite.Wallet` / `TealSuite.Tasks`。
+ソースは UTF-8 で保存します (csc は `/codepage:65001`)。名前空間は `TealSuite.Common` / `TealSuite.Hub` / `TealSuite.Pass` / `TealSuite.Memo` / `TealSuite.Clip` / `TealSuite.Volume` / `TealSuite.Wallet` / `TealSuite.Tasks` (Teal Plan。名前空間は 1.9.x のまま)。
 
 ## 色 (Theme.cs)
 
@@ -190,7 +203,7 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 初期設定: Teal Clip・Teal Wallet・Teal Tasks がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
+- 初期設定: Teal Clip・Teal Wallet・Teal Plan がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
   各アプリの `Program.ResidentByDefault`)。ほかはオフ。設定ページの説明文は apps.json の `residentNote`。Teal Hub は常に常駐
   (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
 - 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
@@ -311,14 +324,62 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 1. `src/Apps/*/AppMeta.cs` と `apps.json` のバージョンを上げる (下の「バージョンを上げる」。スイートの版 = `suiteVersion`)
 2. `CHANGELOG.md` の先頭に `## x.y.z (日付)` の節を書く (これがリリースの説明文とアップデートの確認画面の説明になる)
 3. `./build.sh && tests/run_tests.sh` で確認 → main にマージ (push)
-4. Actions の **Release** (`.github/workflows/release.yml`) が `v<suiteVersion>` のタグがまだなければ:
-   ビルド → テスト (xvfb) → 前のリリースの `TealSuite-<前>.zip` を取得 → `tools/release_build.sh --prev …` →
-   `gh release create v<ver>` (zip・.tealupdate・.sha256)
+4. Actions の **Release** (`.github/workflows/release.yml`) が動く:
+   - `linux` … ビルド → テスト (xvfb) → 前のリリースの `TealSuite-<前>.zip` を取得 → `tools/release_build.sh --prev …` → 成果物 `release`
+   - `windows` … 本物の Windows で確かめる (下の「Windows のチェック」)
+   - `publish` … main への push で、`linux` と `windows` が両方通り、`v<suiteVersion>` のリリースがまだなければ
+     `gh release create v<ver>` (zip・.tealupdate・.sha256)。どちらかが失敗したら公開しない
 5. 利用者の Teal Hub が 1 日以内に見つけてお知らせする
+
+- プルリクエスト・main 以外のブランチへの push・手動実行 (Actions の画面の「Run workflow」) でも `linux` と `windows` は動く (公開はしない)
 
 - タグがもうあるときは何もしない (バージョンを上げ忘れた push で壊れない)。作り直すときはリリースとタグを消してから Actions を再実行
 - 手元で同じものを作る: `tools/release_build.sh [--prev 前の TealSuite-x.y.z.zip]` → `release/`
 - リリースは `GITHUB_TOKEN` (permissions: contents: write) で作る。GITHUB_TOKEN で作ったリリースは別のワークフローを起動しない
+- 全部入りの .tealupdate は `tools/retired-files.txt` (途中の版でなくなったファイル。例: 1.9.0 の `apps/TealSub/TealSub.exe`) も消す指示に入れる。
+  ファイルを消したり名前を変えたりした版では、ここに 1 行足す (古い版から一気に上げた人のところに残らないように)
+
+## Windows のチェック (GitHub Actions の windows-latest)
+
+ふだんの開発は Linux の mono でしているので、「Windows で本当に動くか」はここで確かめる。
+GitHub が無料で貸してくれる Windows のマシン (公開リポジトリなら無料) で、リリースの前に毎回自動で動く。
+1 つでも失敗すると、その版は公開されない。
+
+やっていること (上から順に。失敗しても残りは続けて、最後にまとめて失敗にする):
+
+1. **Windows の csc でビルド** … `build.ps1` が Windows に入っている .NET Framework の csc で全アプリとテストをビルドする
+   (mono でしか通らない書き方をしていないかの確認)。ソースと参照 DLL の一覧は build.sh と同じファイルを読む
+   (`tools/common-refs.txt`・`src/Apps/<id>/refs.txt`・テストは `tests/test-build.txt`)
+2. **テストを全部** … csc でビルドしたものと、実際に配る mono でビルドしたもの (linux で作った zip) の両方で
+   `tests/run_tests.ps1` を実行する。Windows では mono で飛ばしていたテストも動く:
+   - 本物の DPAPI (`tests/WinTests.cs`): Teal Pass の `vault.dat` (先頭 `PMV1` + DPAPI) と Teal Clip の `history.dat` が
+     本物の DPAPI の形式で、決まったエントロピーでだけ開けること (エントロピーは 1.0 から変えていない。変えると今までのデータが開けなくなる)
+   - 本物のレジストリ (HKCU の Run キー) にテスト用の名前で書いて読んで消す
+   - Teal Hub の「起動と終了」は、シェル スクリプトの代わりに `tests/win/Sleeper.cs` (画面のない眠るだけの exe) を使う
+3. **起動のチェック** (`tools/win/smoke.ps1`) … 各アプリを本当に起動して、画面が出ること・落ちないこと・
+   エラーのダイアログが出ないこと・error.log に例外がないことを確かめ、終了の合図で閉じることも確かめる。
+   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip は `/show` で画面を出す
+4. **アップデートのチェック** (`tools/win/update-test.ps1`) … 前のリリースの zip を展開し、前の版の Teal Hub と Teal Memo を起動しておいて、
+   新しい .tealupdate を「前の版に入っている本物の TealUpdater.exe」で当てる (画面の「アップデート」ボタンを自動で押す)。
+   バージョン・アプリの一覧・全ファイルのハッシュ・余分なファイルが残っていないこと・アプリが起動し直されることを確かめる。
+   1.8.0 からも試し、Teal Sub のデータ・ショートカット・スタートアップが Teal Wallet に引き継がれることを確かめる
+   1.9.0 からも試し (`-Seed19`)、Teal Tasks のタスク・ショートカット・スタートアップが Teal Plan に引き継がれることを確かめる (1.10.0)
+5. **スクリーンショットとログ** … Actions の実行結果の画面の下の「Artifacts」の `windows-check` に入る
+   (screenshots/ は各アプリの画面、logs/ はテストとチェックのログ)。スクリーンショットは撮れなくても失敗にはしない
+   起動してすぐに落ちたときは、`TEALSUITE_BOOTLOG=1` で書かれる %TEMP%\tealsuite-boot.log (どこまで進んだか) もログに出す
+
+手元の Windows でも同じことができる (PowerShell で、リポジトリのフォルダから):
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1 -Tests
+powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1
+powershell -ExecutionPolicy Bypass -File tools\win\smoke.ps1 -Suite dist\TealSuite -Shots shots
+powershell -ExecutionPolicy Bypass -File tools\win\update-test.ps1 -PrevZip TealSuite-1.9.0.zip -Package TealSuite-update-1.10.0.tealupdate -Dist dist\TealSuite -Seed19
+```
+
+失敗したとき: Actions の画面で赤くなった手順を開くとログが見られる (`FAIL` と `::error::` の行が原因)。
+`windows-check` の screenshots/ に、失敗したときの画面全体 (`*-screen-failed.png`) も入る。
+TealUpdater の画面を自動で押せなかったときは、前の版の UpdateEngine を直接呼んで続け、警告 (黄色) を出す (これは失敗にしない)。
 
 ## バージョンを上げる
 
@@ -331,7 +392,7 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 配布は GitHub Actions が作る (上の「リリース」)。手動なら `./build.sh package-update` で作るアップデート ファイル。
 保存形式を変えるときは各ファイルの `version` を上げ、古い形式を読めるようにしておくこと。
 
-## Teal Wallet (1.7.0〜1.8.0 は Teal Sub) と Teal Tasks (1.7.0)
+## Teal Wallet (1.7.0〜1.8.0 は Teal Sub) と Teal Plan (1.7.0〜1.9.x は Teal Tasks)
 
 どちらも **AI・ネットワークを使わない** (HttpClient / WebRequest を参照しない)。データは `DataStore` の JSON だけ。
 画面以外のロジックは静的クラスにまとめ、`DateTime today/now` を引数で受け取る (テストで日付を固定できる)。
@@ -349,14 +410,48 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
     よく買うもの (`FrequentItems`。欲しいものの記録は除く)、月の支出・予算 (`MonthSpend` / `BudgetLeft`)、テキスト (`ToText`)、欲しいもの (`OrderedWants` / `BuyWant`)、見本データ (`Sample`)。
     `ShopForms.cs` … 品の編集・欲しいもの・履歴から追加。`MainForm.Shop.cs` … 買い物リスト / 欲しいもののタブとショートカット。
     バックアップ (JSON) は `SubData.Shopping` に入れる (1.8.0 の subs.json は Shopping なしで読める)
-- Teal Tasks (`src/Apps/TealTasks/`)
+- Teal Plan (`src/Apps/TealPlan/`。1.9.x までは `src/Apps/TealTasks/`。名前空間は `TealSuite.Tasks` のまま)
   - `QuickParser.cs` … 「明日15時 歯医者 #病院」などの日本語の 1 行を `ParseResult` に。全角は先に半角へ (`Normalize`)。
     時刻だけで過ぎていれば明日、「1〜6 時」は午後、1 週間以上前の M/D は来年
   - `TaskLogic.cs` … おすすめ順の点数 (`Score`)、今日のリスト、くり返しの次の回 (`NextDue`。たまった分は飛ばす)、
     完了 / 取り消し (作った次の回を消す)、お知らせ (`DueNotices`。期限を変えたら印が変わるのでもう一度出る)、統計、CSV、見本データ
   - `CalendarView.cs` … 月・週・日の自前描画 (ドラッグで移動、週・日は 15 分きざみ)。`Control` のメンバーと名前がぶつからないよう `Day` / `MoveDay`
   - `TaskForms.cs` … 詳しい追加・編集、設定。`MainForm.cs` … 入力欄・今日 / カレンダー / 一覧 / 統計・元に戻す (1 段)
-  - 引数: `--tab=today|calendar|list|stats` (1〜4 でも可)、`--cal=month|week|day`
+  - 引数: `--tab=today|calendar|list|stats` (1〜4 でも可)、`--cal=month|week|day`、`--list=tasks|events|all` (1.10.0)
+  - 小タスク (1.10.0): `PlanRows.cs` … 一覧の行 (`RowKind` = Task / Sub / AddSub / Event / Header) を作る (`Agenda` は一覧の予定表)。行のキーは `t:<id>` / `s:<id>:<n>` / `a:<id>` / 予定は `CalItem.Key` / 日の見出しは `h:<日付>`。
+    開いているタスクは `TaskData.Expanded` (id の一覧。tasks.json の `expanded`) に保存。`SubtaskLogic` … 進み具合 (`Progress` 「2/5」)・追加・名前の変更・並べ替え・削除。
+    一覧の中の入力欄は `MainForm` の `InlineEditor` (`ShowInline` / `CommitInline` / `CancelInline`)。キーは `HandleListKey` (テストからも呼ぶ)。
+    mono では隠れたフォームの子コントロールの `Visible` が false になるので、開いているかは `inlineOpen` で持つ
+  - 予定 (1.10.0): `EventModel.cs` … `EventItem` (始まり・終わり・終日・場所・メモ・色・くり返し・終わりの日 `until`・飛ばす回 `skip`・お知らせ `remind` 分前。-1 はなし)。
+    `TaskData.Events` (tasks.json の `events`。1.9.x の tasks.json は events なしで読める)。
+    `EventLogic.Occurrences` (くり返しの回を期間で展開。何日かにわたる予定も)・`Collect` (タスク・予定・外のソースを `CalItem` にまとめ、「タスクだけ / 予定だけ」で絞る)・
+    `DueNotices`・CSV。`QuickParser` は時刻の範囲・@場所・日付の範囲・終日・先頭の「予定」で `IsEvent` にする。
+    `CalendarView` … 空き場所のダブルクリック / ドラッグで `EventRequested`、予定の移動 (`ItemMoved`)・長さの変更 (`ItemResized`)。
+    `EventForms.cs` … 予定の追加・編集と、くり返しの「この回だけ / すべて」。テストでは `EventFormHook` / `SeriesHook` / `ConfirmHook` でダイアログの代わりをする
+  - 外の項目: `IPlanSource` (`Name` と `Items(from, to)` で `CalItem` を返す) を `MainForm.ExternalSources` に足すと、
+    カレンダー・今日・予定表に **読むだけ** の項目 (`CalKind.External`・`ReadOnly`) として出る (動かす・消すはできない。例外を出すソースは飛ばす)。
+    1.10.0 で `WalletSource.cs` の `WalletPlanSource` を実装 (Teal Wallet の subs.json を `SuiteRead` で読み、支払い日と無料期間のおわり)。
+    `TaskSettings.ShowWallet` (既定 true。古い設定にはないので `OnDeserializing` で true) と `ApplyWalletSource()` で出す・出さない。
+    ダブルクリックは `OpenItem` → `OpenRequestHook` (テスト用) か `OpenRequest.Send("TealWallet", ...)`
+
+#### 1.10.0 のアプリどうしの連携 (共通の部品)
+
+アプリどうしは参照しない。相手のデータ ファイルを読むだけで、書くのは自分のファイルだけ。
+
+- `Common/SuiteRead.cs` … ほかのアプリのデータを読むだけ (`Wallet()`・`Plan()`・`Memo()`。計算は `WalletCalc`・`PlanCalc`)。ない・壊れている・読めないときは null / 空 (例外を出さない)。
+  更新日時と大きさでキャッシュする (テストでは `File.SetLastWriteTimeUtc` で日時をずらす)。Teal Pass の vault.dat と Teal Clip の history.json は読まない
+- `Common/SuiteTags.cs` … Teal Memo と Teal Plan の #タグを集める (`Collect`)・`TagSuggest` (入力中の `#…` の `Token` と `Candidates`)。両方の入力欄で使う
+- `Common/OpenRequest.cs` … 「この項目を開いて」の頼みごと。`<データ>\<アプリ>\open-request.json` (種類・キー・時刻) を `Write` し、
+  起動中なら `Notify` (`AppInfo.OpenEventName` のイベント)、起動していなければ exe を起動する (`Send` はこの 2 つをまとめたもの)。
+  受け取る側は `AppHost` が `Take()` して消し、アプリの `OpenFromRequest` を呼ぶ。`MaxAgeSeconds` (300 秒) より古いもの・壊れたものは捨てる。
+  各アプリの `OpenFromRequest(kind, key)`: Plan (`task`/`event`)・Wallet (`sub`/`shop`。タブを選ぶ)・Memo (`note`)・Pass (`site`。保管庫の読み込み前なら読み込み後に開く)
+- Teal Pass のサイト名の索引: `Vault.cs` の `SiteIndex` … `site-index.dat` に、サイト名だけ (重複・空は除く) を DPAPI CurrentUser で保存する。
+  形式は "PSI1" + 暗号文、entropy は `TealSuite.TealPass.siteindex.v1` (vault の "PMV1" / `AppSuite.PasswordMaker.vault.v1` とは別。変えないこと)。
+  保管庫の読み込み・保存のたびに `Update`。`PmSettings.SiteIndex` (既定 true。「サイト名を検索に出す」) がオフなら `Delete`。
+  Teal Hub の `HubBackup` はこのファイルをバックアップに入れない (サイト名は vault から作り直せるため)
+- Teal Hub: `HubHome.cs` … `HubToday.Build` (今日の行)・`TraySummary`、`PassSites.Read` (索引だけを読む。vault.dat は開かない)、`HubSearch.Run` (Memo・Plan・Wallet・Pass のサイト名。Clip は入れない)、`HomeList` (行の表示)。
+  `MainForm` の「今日」「アプリ」のタブ (`ViewTabs`)・検索欄 (`SearchBox`)。`FileSystemWatcher` (データのフォルダ全体。`IsWatchedFile` で絞る)・「再読み込み」・1 分のタイマーで表示し直す。
+  ダブルクリックは `OpenHomeItem` → `OpenItemHook` (テスト用) か `OpenRequest`。通知領域の件数は `HubSettings.TraySummary` (既定 true)・`HubTray.SetTraySummary`
 - お知らせは起動している間だけ (NotifyIcon のバルーン)。最初は 5 秒後、その後 30 秒ごとに確認する
 - ショートカットの初期設定はなし (apps.json の `shortcuts` の `default` が空)
 
@@ -398,8 +493,9 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 ## ビルド
 
 - Linux: `sudo apt install mono-devel` → `./build.sh` (特定のアプリだけ: `./build.sh TealMemo TealVolume`)
-- Windows: `build.bat` (追加のインストールは不要。`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe` を使用)
-- 共通の参照 DLL は build.sh の `COMMON_REFS` と build.bat の `REFS` の両方に書く。アプリ固有のものは refs.txt。
+- Windows: `build.ps1` (PowerShell。テストも作れる: `-Tests`) または `build.bat` (追加のインストールは不要。`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe` を使用)
+- 共通の参照 DLL は `tools/common-refs.txt` (build.sh・build.bat・build.ps1 が読む)。アプリ固有のものは refs.txt。
+- テストの参照とソースの一覧は `tests/test-build.txt` (run_tests.sh と build.ps1 が読む)。テストのファイルを足したらここに 1 行
 
 ## テスト (Linux / mono)
 
@@ -421,17 +517,29 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   OnlineUpdateTests.cs (バージョン比較・リリース JSON・アセット選び・sha256・接続先の制限・1 日 1 回と無効の設定・お知らせとボタン・ダウンロード → TealUpdater)、
   SubTasksTests.cs (Teal Sub の更新日・合計・見直しの点数・お知らせ、Teal Tasks の入力の読み取り・おすすめ順・くり返し・お知らせ・統計・画面)、
   V180Tests.cs (1.8.0 の追加機能と、1.7.0 のデータをそのまま読めること)、
-  V190Tests.cs (買い物リストの読み取り・ロジック・画面、Teal Sub → Teal Wallet の引き継ぎ (データ・設定・Run・バックアップ)、apps.json のマージと .tealupdate)
-- Teal Wallet / Teal Tasks の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
-  `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealTasks/TealTasks.exe out.png`。
+  V190Tests.cs (買い物リストの読み取り・ロジック・画面、Teal Sub → Teal Wallet の引き継ぎ (データ・設定・Run・バックアップ)、apps.json のマージと .tealupdate)、
+  V1100Tests.cs (小タスクの行・キー操作・一覧の中での追加と編集・すべて開く、予定の読み取り・くり返しの展開・外のソース・予定表・お知らせ・CSV、
+  カレンダーでの作成・移動・長さの変更、Teal Tasks → Teal Plan の引き継ぎ (データ・設定・Run・お知らせ 1 回・バックアップ)、apps.json のマージと .tealupdate)、
+  V1100IntegrationTests.cs (1.10.0 の連携: Wallet → Plan のカレンダー・設定のオン / オフ・壊れたデータ、「開いて」の頼みごと (Plan・Wallet・Memo・Pass)、
+  Pass のサイト名の索引 (秘密が入らない・別の鍵・オフで消す・バックアップに入れない)、Hub の今日・検索・#タグの候補・画面・通知領域の件数、
+  Plan の一覧「予定」でタスク用のボタンを隠す)
+- Teal Wallet / Teal Plan の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
+  `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealPlan/TealPlan.exe out.png`。
+  1.10.0 の README の画像: `--tab=list --list=tasks` (小タスクを開いた一覧)・`--tab=list --list=events` (予定表)・`--tab=today`・`--cal=week|month`・`--tab=stats`。
+  Hub の「Teal Plan になりました」は、seed に `TealTasks\` フォルダを足して rename-notices.txt を消し、dist の TealHub.exe を撮る。
   時刻で見た目が変わるので、README の画像は `faketime -f "@2026-10-27 09:20:00"` を前に付けて撮った (seed も同じ時刻で)。
   お知らせのバルーンは起動 5 秒後に出るので、待ち時間は 4 秒にする
 - Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / main:tall (全アプリが入る高さ) / settings:<AppId>) (ビルド方法はファイルの先頭)
+  1.10.0 の「今日」と検索: `SHOT_ARGS=today` / `SHOT_ARGS="search:#買い物"` (seed のデータで、faketime も seed と同じ時刻)
+- 1.10.0 の連携の画面: tests/v1100_shots.cs をビルドし (方法はファイルの先頭)、`SHOT_ARGS=plan:month` (Teal Wallet の支払い日つきの月のカレンダー)・
+  `SHOT_ARGS=pass:settings` (Teal Pass の設定のダイアログだけ。後ろの一覧は写さない)
 - 1.8.0 で増えた画面 (メニュー・支払い予定・まとめて追加) の確認: tests/v180_shots.cs をビルドし (方法はファイルの先頭)、
   `SHOT_ARGS="hub その他" tests/shot.sh build/V180Shots.exe out.png` (hub / volume / sub / tasks に、押すボタンの文字の先頭を付ける。tasks:bulk は「まとめて追加」)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
-- ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できないので、実機の Windows で確認する。
+- ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できない。
+  DPAPI・レジストリ・起動・アップデートは GitHub Actions の Windows で自動で確かめる (上の「Windows のチェック」)。それ以外は実機の Windows で確認する。
+- `V190Tests.cs` 以降: `WinTests.cs` (Windows だけ。mono では skip と出る)
 
 ## 配布
 

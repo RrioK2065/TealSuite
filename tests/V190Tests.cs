@@ -395,12 +395,14 @@ public static class V190Tests
         Check(pkg.Delete.Contains("apps/TealSub/TealSub.exe"), "古い TealSub.exe は削除するファイルに入る");
 
         // 実際に作ったアップデート ファイル (あれば)
-        var real = Path.Combine(distDir, "..", "TealSuite-1.9.0.tealupdate");
-        if (File.Exists(real))
+        // (1.9.1 から: 1.9.0 以降のどのファイルにも TealSub.exe を消す指示が入る。tools/retired-files.txt)
+        var reals = Directory.Exists(Path.Combine(distDir, "..")) ? Directory.GetFiles(Path.Combine(distDir, ".."), "TealSuite-*.tealupdate") : new string[0];
+        var real = reals.OrderBy(x => x).LastOrDefault();
+        if (real != null)
         {
             var rp = U.UpdatePackage.Read(real);
-            Check(rp.Version == "1.9.0" && rp.Delete.Any(x => x == "apps/TealSub/TealSub.exe") && rp.Files.Any(x => x.Path == "apps/TealWallet/TealWallet.exe")
-                && rp.Apps.Any(a => a.Str("id") == "TealWallet" && a.Strs("legacyIds").Contains("TealSub")) && !rp.Apps.Any(a => a.Str("id") == "TealSub"), "TealSuite-1.9.0.tealupdate: TealWallet を入れて TealSub.exe を消す");
+            Check(Path.GetFileName(real) == "TealSuite-" + rp.Version + ".tealupdate" && rp.Delete.Any(x => x == "apps/TealSub/TealSub.exe") && rp.Files.Any(x => x.Path == "apps/TealWallet/TealWallet.exe")
+                && rp.Apps.Any(a => a.Str("id") == "TealWallet" && a.Strs("legacyIds").Contains("TealSub")) && !rp.Apps.Any(a => a.Str("id") == "TealSub"), Path.GetFileName(real) + ": TealWallet を入れて TealSub.exe を消す");
             // 1.8.0 の形のフォルダに実際に当てる (TealSub.exe と空になった apps/TealSub が消え、apps.json は Teal Wallet 1 件)
             var suite = Path.Combine(Path.GetTempPath(), "tealsuite-v190-apply-" + System.Diagnostics.Process.GetCurrentProcess().Id);
             try { if (Directory.Exists(suite)) Directory.Delete(suite, true); } catch { }
