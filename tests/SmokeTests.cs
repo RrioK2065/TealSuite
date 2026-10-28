@@ -22,6 +22,7 @@ static class SmokeTests
     }
     static void Section(string s) { Console.WriteLine("== " + s); }
 
+    [STAThread] // WinForms (AllowDrop の OLE) は STA でないと Windows で Show が戻らない
     static int Main(string[] args)
     {
         // Windows のコンソール (GitHub Actions のログ) でも日本語が文字化けしないように

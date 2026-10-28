@@ -32,8 +32,16 @@ static class HotkeyTests
         Check(V.VolumeTray.DefaultHotkey.ToString() == "Alt+V" && C.HotkeySpec.Validate(V.VolumeTray.DefaultHotkey) == null, "Teal Volume の初期設定は Alt+V");
 
         // GlobalHotkey: 登録の失敗 (ほかのアプリが使用中) を報告する (1.6.0 では Teal Hub だけが使う)
+        // Windows では FakeRegister を使わず、本物の RegisterHotKey で先に押さえる (エラー 1409)
         string taken = "Ctrl+Alt+K";
-        C.GlobalHotkey.FakeRegister = s => s.ToString() == taken ? C.GlobalHotkey.ConflictMessage(s) : null;
+        C.GlobalHotkey blocker = null;
+        if (C.AppInfo.IsWindows)
+        {
+            blocker = new C.GlobalHotkey();
+            var held = blocker.Register(P(taken));
+            Check(held == null && blocker.Active, "テスト用に " + taken + " を先に登録 (" + held + ")");
+        }
+        else C.GlobalHotkey.FakeRegister = s => s.ToString() == taken ? C.GlobalHotkey.ConflictMessage(s) : null;
         try
         {
             var g = new C.GlobalHotkey();
@@ -45,7 +53,7 @@ static class HotkeyTests
             g.Unregister(); Check(!g.Active, "外す");
             g.Dispose();
         }
-        finally { C.GlobalHotkey.FakeRegister = null; }
+        finally { C.GlobalHotkey.FakeRegister = null; if (blocker != null) blocker.Dispose(); }
     }
 
     static void WritePrefs(string json)

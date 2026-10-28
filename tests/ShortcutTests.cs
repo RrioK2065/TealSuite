@@ -93,9 +93,21 @@ static class ShortcutTests
             Check(mgr.DuplicateOf(memo, P("Alt+H")) == self, "Teal Hub の Alt+H とも重複を調べる");
             var bad = memo.Apply(C.HotkeySpec.Of(C.HotMods.Ctrl, Keys.C));
             Check(bad != null && memo.Current.IsEmpty, "使えない組み合わせは断る: " + bad);
-            taken.Add("Alt+M");
-            var used = memo.Apply(P("Alt+M"));
-            Check(used != null && used.Contains("ほかのアプリ") && memo.Current.IsEmpty, "ほかのソフトが使用中なら元のまま: " + used);
+            // Windows では FakeRegister を使わず、本物の RegisterHotKey で Alt+M を先に押さえる
+            C.GlobalHotkey blocker = null;
+            if (C.AppInfo.IsWindows)
+            {
+                blocker = new C.GlobalHotkey();
+                var held = blocker.Register(P("Alt+M"));
+                Check(held == null && blocker.Active, "テスト用に Alt+M を先に登録 (" + held + ")");
+            }
+            else taken.Add("Alt+M");
+            try
+            {
+                var used = memo.Apply(P("Alt+M"));
+                Check(used != null && used.Contains("ほかのアプリ") && memo.Current.IsEmpty, "ほかのソフトが使用中なら元のまま: " + used);
+            }
+            finally { if (blocker != null) blocker.Dispose(); }
             Check(memo.Apply(P("Alt+Shift+M")) == null && mgr.IsActive(memo), "別のキーなら登録できる");
 
             // 解除 = なし (初期設定に戻さない)
