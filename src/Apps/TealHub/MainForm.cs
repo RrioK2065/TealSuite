@@ -750,13 +750,14 @@ namespace TealSuite.Hub
             watcher = null;
         }
 
-        /// <summary>見るべきファイルか (各アプリの .json と Teal Pass のサイト名の索引。Teal Hub 自身と Teal Clip は見ない)</summary>
+        /// <summary>見るべきファイルか (各アプリの .json と Teal Pass のサイト名の索引。Teal Hub 自身・Teal Clip・Teal Pin は見ない)</summary>
         public static bool IsWatchedFile(string path)
         {
             if (string.IsNullOrEmpty(path)) return false;
             var name = Path.GetFileName(path);
             var dir = Path.GetFileName(Path.GetDirectoryName(path) ?? "");
-            if (string.Equals(dir, Program.Id, StringComparison.OrdinalIgnoreCase) || string.Equals(dir, "TealClip", StringComparison.OrdinalIgnoreCase)) return false;
+            if (string.Equals(dir, Program.Id, StringComparison.OrdinalIgnoreCase) || string.Equals(dir, "TealClip", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(dir, "TealPin", StringComparison.OrdinalIgnoreCase)) return false;   // 1.11.0: Teal Pin は「今日」・検索に出さない (pinned.json はよく書き換わる)
             if (string.Equals(name, OpenRequest.FileName, StringComparison.OrdinalIgnoreCase)) return false;
             return name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || string.Equals(name, PassSites.FileName, StringComparison.OrdinalIgnoreCase);
         }

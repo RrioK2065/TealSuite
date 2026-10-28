@@ -12,6 +12,7 @@ Windows 用の小さなアプリ群「Teal ○○」です。すべて **C# 5 / 
 | `TealVolume` | Teal Volume | 音量操作 | VolumeMixer |
 | `TealWallet` | Teal Wallet | サブスク＆買い物リスト | TealSub (1.7.0〜1.8.0 の Teal Sub。1.9.0 で名前を変更) |
 | `TealPlan` | Teal Plan | タスク＆予定 | TealTasks (1.7.0〜1.9.x の Teal Tasks。1.10.0 で名前を変更) |
+| `TealPin` | Teal Pin | 最前面に固定 | (1.11.0 で新しく追加) |
 
 ## フォルダ構成
 
@@ -203,7 +204,7 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 初期設定: Teal Clip・Teal Wallet・Teal Plan がオン (起動している間だけ記録・お知らせができるため。apps.json の `resident` と
+- 初期設定: Teal Clip・Teal Wallet・Teal Plan・Teal Pin がオン (起動している間だけ記録・お知らせ・自動の固定ができるため。apps.json の `resident` と
   各アプリの `Program.ResidentByDefault`)。ほかはオフ。設定ページの説明文は apps.json の `residentNote`。Teal Hub は常に常駐
   (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
 - 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
@@ -358,7 +359,7 @@ GitHub が無料で貸してくれる Windows のマシン (公開リポジト�
    - Teal Hub の「起動と終了」は、シェル スクリプトの代わりに `tests/win/Sleeper.cs` (画面のない眠るだけの exe) を使う
 3. **起動のチェック** (`tools/win/smoke.ps1`) … 各アプリを本当に起動して、画面が出ること・落ちないこと・
    エラーのダイアログが出ないこと・error.log に例外がないことを確かめ、終了の合図で閉じることも確かめる。
-   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip は `/show` で画面を出す
+   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip と Teal Pin は `/show` で画面を出す
 4. **アップデートのチェック** (`tools/win/update-test.ps1`) … 前のリリースの zip を展開し、前の版の Teal Hub と Teal Memo を起動しておいて、
    新しい .tealupdate を「前の版に入っている本物の TealUpdater.exe」で当てる (画面の「アップデート」ボタンを自動で押す)。
    バージョン・アプリの一覧・全ファイルのハッシュ・余分なファイルが残っていないこと・アプリが起動し直されることを確かめる。
@@ -455,6 +456,59 @@ TealUpdater の画面を自動で押せなかったときは、前の版の Upda
 - お知らせは起動している間だけ (NotifyIcon のバルーン)。最初は 5 秒後、その後 30 秒ごとに確認する
 - ショートカットの初期設定はなし (apps.json の `shortcuts` の `default` が空)
 
+## Teal Pin (1.11.0。`src/Apps/TealPin/`。名前空間 `TealSuite.Pin`)
+
+好きなウィンドウを最前面に固定する (`SetWindowPos` の `HWND_TOPMOST`、外すときは `HWND_NOTOPMOST`)。
+**AI・ネットワークを使わない**。ほかのアプリに DLL を入れない (フックはすべて自分のプロセスの中で受ける方式)。
+データは `%APPDATA%\TealSuite\TealPin\settings.json` (ルール・自分のプリセット・設定) と `pinned.json` (固定中の一覧。落ちたとき用)。
+Teal Hub の「今日」と検索には出さない (固定はその場の操作で、予定やメモのような「探す物」がないため)。バックアップには入る (フォルダごと)。
+
+ファイルと役割:
+
+- `PinModel.cs` … 画面と Win32 に関係しない部分 (テストはここを中心に確かめる)
+  - `PinPreset` (`corner` = 隅か中央に決まった大きさ (96 dpi の px)、`area` = 作業領域に対する割合)、`PinRule` (exe 名・「タイトルに含む」(任意)・プリセット (任意)・有効)、
+    `PinSettings` (`version`・`titleBarMenu`・`border`・`borderWidth` 1〜8 (初期 3)・`toast`・`keepTopmost`・`rulesOnStart`・`rules` (最大 50)・`presets` (最大 30))。
+    初期値は `[OnDeserializing]` で入れる (DataContract はコンストラクターを呼ばないため。項目が足りない古いファイルでも初期値になる)
+  - `PinStore` (読み書き。壊れたファイルは初期設定で開く)、`PresetMath` (モニターの作業領域 (タスクバーを除く) と DPI から位置と大きさを計算。
+    はみ出さない・最小 160)、`BorderMath` (ウィンドウの四角から枠線の 4 本の帯を計算。最大化のときは内側に描く)、
+    `RuleMatcher` (exe 名は大文字小文字を区別せず `*` が使える。タイトルは部分一致。最初に合ったルールを使う)
+- `PinManager.cs` … 固定・解除・一覧・ルールの適用。Windows の操作は `IWindowApi`、枠線は `IBorder` を通すので、テストでは `FakeWindows.cs` に差し替える。
+  固定できないとき (管理者として実行中・自分自身・デスクトップとタスクバー・もともと最前面) は `PinResult` に理由の文章を入れて返す。
+  `keepTopmost` がオンなら、ほかのアプリに最前面を外されたときに付け直す。固定の一覧は `pinned.json` に書き、次の起動で残っていたら外す
+- `Win32Pin.cs` … `Win32Windows` (本物の `IWindowApi`)・`PinNative` (P/Invoke)。位置はすべて物理 px。Teal Pin の画面はスイートの決まりどおり
+  System DPI のままで、位置を読む・枠線を動かすときだけスレッドを Per-Monitor v2 にする (`DpiScope`)。`DwmGetWindowAttribute` の
+  `DWMWA_EXTENDED_FRAME_BOUNDS` で見た目どおりの四角を使う (影の分ずれない)。管理者のウィンドウは `OpenProcessToken` の昇格で判定
+- `Overlays.cs` … `OverlayWindow` (`WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`。
+  クリックは下に通り、フォーカスを取らず、Alt+Tab に出ない)、`StripBorder` (4 本の帯で枠線。1 枚の大きな透明ウィンドウにしないのは、動かすたびに広い範囲を描き直してちらつくため。
+  4 本は `DeferWindowPos` でまとめて同時に動かし、固定したウィンドウのすぐ上に重ねる (ほかの最前面のウィンドウやメニューを隠さない))、`PinToast` (「📌 固定しました」の小さなお知らせ)、`TitlePopup`
+- `Hooks.cs` … `WinEventSource` (`SetWinEventHook`、`WINEVENT_OUTOFCONTEXT`。移動・最小化・閉じた・前面・タイトル・メニューの開閉を受けて枠線を追いかける)、
+  `MouseHookThread` (`WH_MOUSE_LL` を専用のスレッドで。フックの中では何もせず、すぐに戻す)、`TitleBarMenu` (下の「タイトルバーの右クリック」)
+- `TrayContext.cs` (`PinTray`) … 常駐 (初期設定はオン)、通知領域のメニュー (固定中の一覧・すべて外す・画面を開く・終了)。
+  **終了するときは固定をすべて外し**、枠線とフックを片付ける。`AppHost` の Hotkey イベントで「前面のウィンドウの固定 / 解除」
+- `MainForm.cs`・`PinDialogs.cs` … タブ「固定中」(アイコン・タイトル・アプリ名、外す・すべて外す・前面に出す・プリセットを当てる)、
+  「自動で固定」(ルール)、「位置とサイズ」(組み込み 6 個 + 自分のプリセット)、「動作」(設定)
+
+決めたこと:
+
+- **ショートカットの初期設定は Ctrl + Alt + T** (T = Top)。Windows・Office・ブラウザーで使われていない組み合わせ。
+  Ctrl + T (新しいタブ)・Ctrl + Shift + T (閉じたタブを開く) とはぶつからず、PowerToys の「常に手前に表示」(Win + Ctrl + T) とも別。
+  受け持つのは今までどおり Teal Hub (apps.json の `shortcuts`)。設定ページで変更・解除できる
+- **タイトルバーの右クリック** … ほかのアプリのシステム メニューに項目を足すには DLL を入れる (またはサブクラス化する) 必要があり、
+  ウイルス対策ソフトに止められたり相手を落としたりするので使わない。代わりに:
+  1. 低レベルのマウス フックで右クリックを知る (タイトルバーの右クリックは横取りしない。相手には今までどおり届き、システム メニューが開く)
+  2. その位置で `WM_NCHITTEST` を送り、`HTCAPTION` / `HTSYSMENU` ならタイトルバー
+  3. 直後に `EVENT_SYSTEM_MENUPOPUPSTART` (システム メニューが開いた) が来たら、メニューのすぐ上 (入らなければ下) に
+     ティールの小さな「📌 最前面に固定 / 固定を外す」を出す。メニューが閉じたら消す (8 秒で自動的にも消す)。
+     メニューが開いている間はマウスをメニューがつかんでいるので、このボタンの範囲のクリックだけはフックで受け取って処理する
+  4. 管理者として実行中のウィンドウには、押したときに理由のお知らせを出す (Windows が権限の低いアプリからの変更を許さないため)
+  5. 「動作」の「タイトルバーの右クリックに「📌 最前面に固定」を出す」(通知領域のメニューにもある) でオフにできる (オフのときはフックを付けない)
+- 枠線の色は Theme の Teal (#008080)。最大化・別のモニター・DPI の違うモニターでも `BorderMath` と DWM の四角で合わせる。最小化・非表示・
+  仮想デスクトップで隠れた (Cloaked) ときは枠線も隠す
+
+テスト: tests/V1110Tests.cs (モデル・プリセットの計算・ルール・枠線の帯・FakeWindows での固定と解除・ルールの適用・落ちたときの回復・
+設定の読み書きと古いファイル・画面・通知領域・apps.json と Hub の登録・.tealupdate)。Windows だけ: `tests/win/PinTarget.cs` (`build.ps1 -Tests` で
+build\PinTarget.exe) のウィンドウを本物の最前面にして、`WS_EX_TOPMOST` が付いた・外れたことを確かめる。
+
 ## 1.8.0 の追加機能 (全アプリ)
 
 どれも **ネットワークを使わない** (Teal Hub の更新の確認だけは今までどおり)。新しい保存項目はすべて `EmitDefaultValue = false` で、
@@ -522,7 +576,8 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   カレンダーでの作成・移動・長さの変更、Teal Tasks → Teal Plan の引き継ぎ (データ・設定・Run・お知らせ 1 回・バックアップ)、apps.json のマージと .tealupdate)、
   V1100IntegrationTests.cs (1.10.0 の連携: Wallet → Plan のカレンダー・設定のオン / オフ・壊れたデータ、「開いて」の頼みごと (Plan・Wallet・Memo・Pass)、
   Pass のサイト名の索引 (秘密が入らない・別の鍵・オフで消す・バックアップに入れない)、Hub の今日・検索・#タグの候補・画面・通知領域の件数、
-  Plan の一覧「予定」でタスク用のボタンを隠す)
+  Plan の一覧「予定」でタスク用のボタンを隠す)、
+  V1110Tests.cs (Teal Pin。上の「Teal Pin」の節)
 - Teal Wallet / Teal Plan の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
   `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealPlan/TealPlan.exe out.png`。
   1.10.0 の README の画像: `--tab=list --list=tasks` (小タスクを開いた一覧)・`--tab=list --list=events` (予定表)・`--tab=today`・`--cal=week|month`・`--tab=stats`。
@@ -535,6 +590,8 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   `SHOT_ARGS=pass:settings` (Teal Pass の設定のダイアログだけ。後ろの一覧は写さない)
 - 1.8.0 で増えた画面 (メニュー・支払い予定・まとめて追加) の確認: tests/v180_shots.cs をビルドし (方法はファイルの先頭)、
   `SHOT_ARGS="hub その他" tests/shot.sh build/V180Shots.exe out.png` (hub / volume / sub / tasks に、押すボタンの文字の先頭を付ける。tasks:bulk は「まとめて追加」)
+- 1.11.0 の Teal Pin の画面: tests/v1110_shots.cs をビルドし (方法はファイルの先頭)、`SHOT_ARGS=list|rules|presets|settings|border`
+  (border は枠線とタイトルバーの右クリックの説明用の絵。本物の画面ではない)。Hub の一覧の Teal Pin のカードは hub_shots の `SHOT_ARGS=main:end` (一番下まで送る)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
 - ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できない。

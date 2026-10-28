@@ -209,7 +209,7 @@ static class OnlineUpdateTests
         try
         {
             f.LoadManifest();
-            Check(f.SuiteVersion == "1.10.0", "今のバージョン: " + f.SuiteVersion);
+            Check(f.SuiteVersion == "1.11.0", "今のバージョン: " + f.SuiteVersion);
             var settings = new H.HubSettings();
             int saves = 0;
             var http = new FakeFetcher();
@@ -244,7 +244,7 @@ static class OnlineUpdateTests
             Check(f.UpdateButtonLabel.StartsWith("●") && f.UpdateButtonLabel.Contains("2.0.0"), "ボタンに印: " + f.UpdateButtonLabel);
             var bar = f.NoticeBars.FirstOrDefault(b => b.Message.Contains("2.0.0"));
             Check(bar != null && bar.Action.Text == "今すぐアップデート" && bar.Extra != null && bar.Extra.Text == "内容を見る" && bar.Dismiss != null, "お知らせ: 今すぐアップデート・内容を見る・あとで");
-            Check(bar != null && bar.Message.Contains("今は 1.10.0") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
+            Check(bar != null && bar.Message.Contains("今は 1.11.0") && bar.Message.Contains("Teal Memo に検索"), "お知らせにバージョンと変更点の 1 行目: " + (bar != null ? bar.Message.Replace("\n", " / ") : ""));
             now = now.AddHours(25);
             u.AutoCheck();
             Check(balloons.Count == 1, "同じバージョンの通知領域のお知らせは 1 回だけ");

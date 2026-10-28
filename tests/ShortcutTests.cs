@@ -64,11 +64,11 @@ static class ShortcutTests
             var self = mgr.Self;
             var pass = mgr.For("TealPass"); var memo = mgr.For("TealMemo");
             var clip = mgr.For("TealClip"); var vol = mgr.For("TealVolume");
-            Check(mgr.Slots.Count == 7 && mgr.For("TealUpdater") == null, "ショートカットは Teal Hub と 6 アプリの 7 つ (TealUpdater はなし)");
+            Check(mgr.Slots.Count == 8 && mgr.For("TealUpdater") == null, "ショートカットは Teal Hub と 7 アプリの 8 つ (TealUpdater はなし)");
             Check(self != null && self.Current.ToString() == "Alt+H" && mgr.IsActive(self), "Teal Hub 自身は Alt+H");
             Check(clip.Current.ToString() == "Ctrl+Shift+V" && vol.Current.ToString() == "Alt+V", "初期設定: Teal Clip は Ctrl+Shift+V、Teal Volume は Alt+V");
             Check(pass.Current.IsEmpty && memo.Current.IsEmpty && pass.Label == "画面を開く", "Teal Pass・Teal Memo は初期設定なし");
-            Check(mgr.IsActive(clip) && mgr.IsActive(vol) && mgr.ActiveCount == 3, "Clip・Volume のキーも Teal Hub が登録する (" + mgr.ActiveCount + " 個)");
+            Check(mgr.IsActive(clip) && mgr.IsActive(vol) && mgr.IsActive(mgr.For("TealPin")) && mgr.For("TealPin").Current.ToString() == "Ctrl+Alt+T" && mgr.ActiveCount == 4, "Clip・Volume・Pin (1.11.0: Ctrl+Alt+T) のキーも Teal Hub が登録する (" + mgr.ActiveCount + " 個)");
             Check(!mgr.Migrated && C.AppPrefs.Exists, "初めてなら引き継ぎなしで app-settings.json を作る");
             Check(H.HubShortcuts.LabelFor(vol.App) == "ミキサーを開く / 隠す" && clip.Label.Contains("履歴"), "何をするキーかの名前 (apps.json の label)");
 
@@ -124,7 +124,7 @@ static class ShortcutTests
             mgr.SuspendAll();
             Check(mgr.ActiveCount == 0 && mgr.Suspended, "キー入力中は全部外す");
             mgr.ResumeAll();
-            Check(mgr.ActiveCount == 3 && !mgr.Suspended, "入力が終わったら戻す (" + mgr.ActiveCount + ")");
+            Check(mgr.ActiveCount == 4 && !mgr.Suspended, "入力が終わったら戻す (" + mgr.ActiveCount + ")");
             mgr.Dispose();
             Check(mgr.ActiveCount == 0, "終了で全部外す");
 
@@ -321,7 +321,7 @@ static class ShortcutTests
             f.ViewTabs.SelectedIndex = 1;
             // カード: 設定の要約と「設定」ボタン
             var clipCard = f.CardFor("TealClip"); var passCard = f.CardFor("TealPass"); var volCard = f.CardFor("TealVolume");
-            Check(f.Cards.Count == 6 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "6 つのカードすべてに「設定」ボタン");
+            Check(f.Cards.Count == 7 && f.Cards.All(c => c.BtnSettings.Visible && c.BtnSettings.Enabled), "7 つのカードすべてに「設定」ボタン");
             Check(f.SelfBar_.BtnSettings.Visible, "Teal Hub 自身の帯にも「設定」ボタン");
             Check(clipCard.SummaryText == "ショートカット: Ctrl + Shift + V ・ 常駐: オン ・ スタートアップ: オフ", "Teal Clip の要約: " + clipCard.SummaryText);
             Check(passCard.SummaryText == "ショートカット: なし ・ 常駐: オフ", "Teal Pass の要約 (常駐オフならスタートアップは出さない): " + passCard.SummaryText);
@@ -331,7 +331,7 @@ static class ShortcutTests
             clipCard.BtnSettings.PerformClick();
             var page = f.SettingsPage;
             Check(f.IsSettingsShown && page.AppId == "TealClip" && !passCard.Visible, "「設定」を押すと画面が Teal Clip の設定ページに切り替わる");
-            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.10.0"), "見出し: " + page.TitleText + " / " + page.SubText);
+            Check(page.TitleText == "Teal Clip の設定" && page.SubText.Contains("v1.11.0"), "見出し: " + page.TitleText + " / " + page.SubText);
             Check(page.StatusText.Contains("Ctrl + Shift + V") && page.Box.Value.ToString() == "Ctrl+Shift+V", "ショートカット欄に今のキー (" + page.StatusText + ")");
             Check(page.ResidentSwitch.Checked && page.ResidentSwitch.Enabled && page.StartupSwitch.Enabled && !page.StartupSwitch.Checked, "常駐はオン、スタートアップは選べる (今はオフ)");
             Check(page.ResidentNoteText.Contains("記録を続けます"), "Teal Clip は常駐の意味を説明");

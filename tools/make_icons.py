@@ -187,6 +187,28 @@ def g_plan(d):
         d.ellipse([x - 22, y - 22, x + 22, y + 22], fill=0)
 
 
+def g_pin(d):
+    # ウィンドウ (枠だけ) + 右上に斜めの画びょう = 最前面に固定
+    d.rounded_rectangle([170, 330, 690, 830], radius=64, fill=255)
+    d.rounded_rectangle([222, 470, 638, 778], radius=28, fill=0)
+    for x in (250, 312):
+        d.ellipse([x - 22, 400 - 22, x + 22, 400 + 22], fill=0)
+
+    def rot(pts, cx, cy, deg):
+        a = math.radians(deg)
+        return [(cx + (x - cx) * math.cos(a) - (y - cy) * math.sin(a), cy + (x - cx) * math.sin(a) + (y - cy) * math.cos(a)) for x, y in pts]
+
+    cx, cy, ang = 640, 400, 45
+    head = [(560, 150), (720, 150), (700, 190), (690, 330), (760, 400), (520, 400), (590, 330), (580, 190)]
+    needle = [(630, 400), (650, 400), (644, 610), (640, 640), (636, 610)]
+    # まわりを切り抜いてから白で描く (ウィンドウと重なっても形が分かるように)
+    for poly in (head, needle):
+        d.polygon(rot(poly, cx, cy, ang), fill=0)
+        d.line(rot(poly, cx, cy, ang) + rot(poly[:1], cx, cy, ang), fill=0, width=64, joint="curve")
+    d.polygon(rot(head, cx, cy, ang), fill=255)
+    d.polygon(rot(needle, cx, cy, ang), fill=255)
+
+
 GLYPHS = {
     "TealHub": g_appmanager,
     "TealPass": g_password,
@@ -196,6 +218,7 @@ GLYPHS = {
     "TealUpdater": g_updater,
     "TealWallet": g_wallet,
     "TealPlan": g_plan,
+    "TealPin": g_pin,
 }
 
 

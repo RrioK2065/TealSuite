@@ -7,8 +7,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Wallet - サブスク＆買い物リスト")]
 [assembly: AssemblyDescription("サブスクの金額・更新日と、買い物リスト・欲しいものをまとめて管理するアプリ")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.10.0.0")]
-[assembly: AssemblyFileVersion("1.10.0.0")]
+[assembly: AssemblyVersion("1.11.0.0")]
+[assembly: AssemblyFileVersion("1.11.0.0")]
 
 namespace TealSuite.Wallet
 {

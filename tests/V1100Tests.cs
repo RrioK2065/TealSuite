@@ -489,7 +489,7 @@ public static class V1100Tests
         var aj = U.Json.ParseObj(File.ReadAllText(Path.Combine(distDir, "apps.json")));
         var dapps = aj.Arr("apps").Cast<U.JObj>().ToList();
         var dp = dapps.FirstOrDefault(a => a.Str("id") == "TealPlan");
-        Check(dp != null && !dapps.Any(a => a.Str("id") == "TealTasks") && dp.Strs("legacyIds").Contains("TealTasks") && aj.Str("suiteVersion") == "1.10.0", "dist の apps.json: TealPlan (legacyIds に TealTasks)");
+        Check(dp != null && !dapps.Any(a => a.Str("id") == "TealTasks") && dp.Strs("legacyIds").Contains("TealTasks") && U.VersionUtil.Compare(aj.Str("suiteVersion"), "1.10.0") >= 0, "dist の apps.json: TealPlan (legacyIds に TealTasks)");
         Check(File.Exists(Path.Combine(distDir, "apps", "TealPlan", "TealPlan.exe")) && File.Exists(Path.Combine(distDir, "apps", "TealPlan", "TealPlan.ico")) && !Directory.Exists(Path.Combine(distDir, "apps", "TealTasks")), "dist: TealPlan.exe と新しいアイコン (TealTasks フォルダはない)");
 
         // 古い exe を消す指示 (tools/retired-files.txt)

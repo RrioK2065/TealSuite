@@ -86,8 +86,16 @@ static class SmokeTests
         Run("1.10.0 連携: Teal Pass のサイト名の索引 (秘密は入れない・オフで消す)", () => V1100IntegrationTests.RunPassIndex(Check, tmp));
         Run("1.10.0 連携: Teal Hub の「今日」・検索・共通の #タグ", () => V1100IntegrationTests.RunHome(Check, tmp));
         Run("1.10.0 連携: Teal Hub の画面 (今日・検索・開く・通知領域の件数)", () => V1100IntegrationTests.RunHubUi(Check, tmp, dist));
+        Run("1.11.0 Teal Pin: ルール (exe・タイトル・入力の確認)", () => V1110Tests.RunRules(Check));
+        Run("1.11.0 Teal Pin: 位置とサイズのプリセット (作業領域・拡大率・モニター)・枠線の計算", () => V1110Tests.RunPresetMath(Check));
+        Run("1.11.0 Teal Pin: 設定の保存・読み込み・壊れた値", () => V1110Tests.RunSettings(Check, tmp));
+        Run("1.11.0 Teal Pin: 固定・解除・枠線・Windows のできごと・自動で固定・落ちたあとの後始末", () => V1110Tests.RunManager(Check));
+        Run("1.11.0 Teal Pin: 画面 (固定中・自動で固定・位置とサイズ・動作)", () => V1110Tests.RunUi(Check, tmp));
+        Run("1.11.0 Teal Pin: 常駐・ショートカット・通知領域・終了で固定を外す", () => V1110Tests.RunTray(Check, tmp));
+        Run("1.11.0 Teal Pin: apps.json・Teal Hub の登録・バックアップ", () => V1110Tests.RunSuite(Check, tmp, dist));
         Run("Windows: 本物の DPAPI (Teal Pass・Teal Clip)", () => WinTests.RunDpapi(Check));
         Run("Windows: 本物のレジストリ (スタートアップの Run キー)", () => WinTests.RunRegistry(Check));
+        Run("Windows: 本物の最前面 (Teal Pin: WS_EX_TOPMOST・枠線・プリセット)", () => V1110Tests.RunWindows(Check));
         Console.WriteLine();
         Console.WriteLine("結果: " + pass + " ok / " + fail + " fail");
         try { Directory.Delete(tmp, true); } catch { }
@@ -192,16 +200,16 @@ static class SmokeTests
     {
         var path = Path.Combine(dist, "apps.json");
         var apps = AM::TealSuite.Hub.Manifest.Load(path);
-        Check(apps.Count == 6, "Teal Hub 自身を除いて 6 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
+        Check(apps.Count == 7, "Teal Hub 自身を除いて 7 件 (" + string.Join(", ", apps.Select(a => a.Id)) + ")");
         Check(apps.All(a => File.Exists(a.ExePath)), "全 exe がビルド出力に存在");
         Check(apps.All(a => a.IconPath != null && File.Exists(a.IconPath)), "全アイコンが存在");
-        Check(apps.All(a => a.Version == "1.10.0"), "バージョン 1.10.0");
+        Check(apps.All(a => a.Version == "1.11.0"), "バージョン 1.11.0");
         Check(apps.All(a => a.Name.StartsWith("Teal ") && !string.IsNullOrEmpty(a.Role)), "名前は Teal ○○ で役割つき (" + string.Join(", ", apps.Select(a => a.Name + "/" + a.Role)) + ")");
         Check(apps.All(a => a.Exe == "apps/" + a.Id + "/" + a.Id + ".exe"), "exe は apps/<id>/<id>.exe");
         // exe 内の AppSpec と apps.json の名前・役割・バージョンが一致し、旧 ID が登録されている
-        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealWallet", "TealSub" }, { "TealPlan", "TealTasks" } };
+        var legacy = new Dictionary<string, string> { { "TealHub", "AppManager" }, { "TealPass", "PasswordMaker" }, { "TealMemo", "Memo" }, { "TealClip", "ClipboardHistory" }, { "TealVolume", "VolumeMixer" }, { "TealWallet", "TealSub" }, { "TealPlan", "TealTasks" }, { "TealPin", null } };
         var all = AM::TealSuite.Hub.Manifest.Load(path, true);
-        Check(all.Count == 7 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 7 件 (Teal Hub を含む)");
+        Check(all.Count == 8 && all.All(a => legacy.ContainsKey(a.Id)), "登録は 8 件 (Teal Hub を含む)");
         foreach (var a in all)
         {
             var asm = System.Reflection.Assembly.LoadFrom(a.ExePath);
