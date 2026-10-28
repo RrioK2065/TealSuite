@@ -141,8 +141,9 @@ jobs:
       - name: 配布物を展開する
         run: |
           $zip = "release\TealSuite-$env:VER.zip"
-          if (-not (Test-Path $zip)) { throw "$zip がありません" }
-          # テスト用・起動のチェック用・ハッシュを比べる元 (触らない) を別々に
+          # ASCII only: Windows PowerShell 5.1 reads this file as cp1252, and UTF-8 ん (byte 0x93) is a smart quote.
+          if (-not (Test-Path $zip)) { throw "missing $zip" }
+          # separate copies: tests, smoke, and an untouched tree for hash compare
           foreach ($d in "shipped", "shipped-tests", "shipped-smoke") { Expand-Archive -Path $zip -DestinationPath $d }
           Get-ChildItem -Recurse shipped\TealSuite | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 200
 
@@ -190,7 +191,7 @@ jobs:
           New-Item -ItemType Directory -Force prev | Out-Null
           gh release download $env:PREV_TAG --repo $env:GITHUB_REPOSITORY --dir prev --pattern "TealSuite-[0-9]*.zip"
           $zip = Get-ChildItem prev -Filter "TealSuite-*.zip" | Select-Object -First 1
-          if (-not $zip) { throw "前のリリース $env:PREV_TAG に TealSuite-*.zip がありません" }
+          if (-not $zip) { throw "release $env:PREV_TAG has no TealSuite-*.zip" }
           # ログは Start-Transcript で残す (2>&1 などで包むと、PowerShell 5.1 では中の stderr がエラー扱いになるため)
           Start-Transcript -Path out\logs\update-prev.log -Append | Out-Null
           $code = 1
