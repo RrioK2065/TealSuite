@@ -209,6 +209,20 @@ def g_pin(d):
     d.polygon(rot(needle, cx, cy, ang), fill=255)
 
 
+def g_macro(d):
+    # マウスの矢印 + 先端のまわりのクリックの線 + 右下の「くり返し」の矢印 = 連打＆マクロ
+    arrow = [(360, 300), (360, 730), (460, 635), (535, 790), (610, 755), (535, 600), (670, 595)]
+    d.polygon(arrow, fill=255)
+    for (x1, y1, x2, y2) in ((295, 235, 225, 165), (360, 210, 360, 115), (425, 235, 495, 165), (270, 300, 175, 300)):
+        d.line([x1, y1, x2, y2], fill=255, width=52)
+        for (cx, cy) in ((x1, y1), (x2, y2)):
+            d.ellipse([cx - 26, cy - 26, cx + 26, cy + 26], fill=255)
+    # くり返しの矢印 (円弧 + 矢じり)
+    cx, cy, r = 745, 730, 125
+    d.arc([cx - r, cy - r, cx + r, cy + r], start=-60, end=230, fill=255, width=54)
+    d.polygon([(cx + 40, cy - r - 70), (cx + 40, cy - r + 70), (cx + 140, cy - r - 10)], fill=255)
+
+
 GLYPHS = {
     "TealHub": g_appmanager,
     "TealPass": g_password,
@@ -219,6 +233,7 @@ GLYPHS = {
     "TealWallet": g_wallet,
     "TealPlan": g_plan,
     "TealPin": g_pin,
+    "TealMacro": g_macro,
 }
 
 

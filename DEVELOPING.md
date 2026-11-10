@@ -13,6 +13,7 @@ Windows 用の小さなアプリ群「Teal ○○」です。すべて **C# 5 / 
 | `TealWallet` | Teal Wallet | サブスク＆買い物リスト | TealSub (1.7.0〜1.8.0 の Teal Sub。1.9.0 で名前を変更) |
 | `TealPlan` | Teal Plan | タスク＆予定 | TealTasks (1.7.0〜1.9.x の Teal Tasks。1.10.0 で名前を変更) |
 | `TealPin` | Teal Pin | 最前面に固定 | (1.11.0 で新しく追加) |
+| `TealMacro` | Teal Macro | 連打＆マクロ | (1.12.0 で新しく追加) |
 
 ## フォルダ構成
 
@@ -32,6 +33,7 @@ src/Common/               全アプリ共通コード (各 exe に一緒にコ�
   Hotkey.cs               全体ショートカット: HotkeySpec (組み合わせの解析・決まり)・GlobalHotkey (RegisterHotKey)
   HotkeyBox.cs            キーの組み合わせを拾う入力欄 (Teal Hub の設定ページ)
   AppPrefs.cs             アプリごとの設定 (ショートカット・常駐)。TealHub\app-settings.json。Teal Hub が書き、各アプリは読むだけ
+  HotkeySlots.cs          1 つのアプリの 2 つめ以降のショートカット (1.12.0): slot の名前・SlotEvents・--slot=・hub-slots.json
   ResidentContext.cs      画面を持つアプリの「常駐」(通知領域・×の動き・Hotkey / Reload イベント)
   HubLink.cs              アプリの「設定」から Teal Hub の設定ページを開く (TealHub.exe --settings <ID>)
   Shortcuts.cs            1.5.0 までの shortcuts.json (読むだけ。引き継ぎ用)
@@ -95,6 +97,8 @@ Teal Hub (TealHub.exe) は、**自分と同じフォルダの apps.json** を読
 | `description` |  | カードの説明文 (1 行) |
 | `icon` |  | .ico の相対パス。無ければ exe のアイコン |
 | `self` |  | `true` なら Teal Hub 自身。一覧には出さない (スタートアップはヘッダーのスイッチで切り替え) |
+| `shortcuts` |  | ショートカットの一覧。先頭が今までの 1 つめ (`hotkey`)。1.12.0 から 2 つめ以降も書ける (`slot` の名前付き。下の「2 つ以上のショートカット」) |
+| `slotsFile` |  | (1.12.0) 数が変わるショートカットの宣言ファイル。アプリのデータ フォルダーからの相対 (Teal Macro は `hub-slots.json`) |
 | `legacyIds` |  | 1.0 の旧 ID (`ClipboardHistory` など)。古い自動起動 (旧 exe 名) を見つけて置き換えるのに使う。AppMeta.cs の `Spec.LegacyIds` と揃える |
 
 実行中かどうかは、`exe` の実際のパスと一致するプロセスで判定します。
@@ -204,7 +208,7 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 
 1.6.0 から、常駐するかどうかはアプリごとに Teal Hub の設定ページで選ぶ (`app-settings.json` の `resident`)。
 
-- 初期設定: Teal Clip・Teal Wallet・Teal Plan・Teal Pin がオン (起動している間だけ記録・お知らせ・自動の固定ができるため。apps.json の `resident` と
+- 初期設定: Teal Clip・Teal Wallet・Teal Plan・Teal Pin・Teal Macro がオン (起動している間だけ記録・お知らせ・自動の固定・すぐの連打ができるため。apps.json の `resident` と
   各アプリの `Program.ResidentByDefault`)。ほかはオフ。設定ページの説明文は apps.json の `residentNote`。Teal Hub は常に常駐
   (`HubShortcuts.ResidentDefault`)。1.5 でスタートアップに登録していたアプリは常駐オンとして引き継ぐ
 - 常駐オン: ×と Esc は隠すだけ (`OnFormClosing` で `CloseReason.UserClosing` のときだけ `e.Cancel`)。最初の 1 回だけ
@@ -245,6 +249,21 @@ Windows 標準の csc.exe (C# 5) でもビルドできるよう、build.sh は `
 - 引き継ぎ: app-settings.json がないときだけ、1.5 の shortcuts.json (Teal Hub・Teal Clip・Teal Volume) と
   1.3 の Teal Volume settings.json の hotkey を読む (`MigratedHotkey`)。何か引き継いだら初回だけお知らせ (`Migrated`)
 - 1.5 の shortcuts.json には書き込まない (1.5 に戻したときはそのまま使われる)
+
+### 2 つ以上のショートカット (1.12.0。Common/HotkeySlots.cs)
+
+Teal Macro のために、1 つのアプリが複数のショートカットを持てるようにした。受け持つのは今までどおり Teal Hub だけ。
+
+- apps.json の `shortcuts` の先頭は今までの 1 つめ (app-settings.json の `hotkey`・`Local\TealSuite.<id>.Hotkey` イベント)。
+  2 つめ以降は `slot` の名前を持ち、値は app-settings.json の `more`: `[{"slot":"pick","hotkey":"Ctrl+Alt+P"}]` (なければ apps.json の `default`)
+- 押されたら: 起動中なら `Local\TealSuite.<id>.Hotkey.<slot>` を鳴らす (アプリは `HotkeySlots.SlotEvents` で待つ)。
+  起動していなければ `--slot=<slot>` を付けて起動 (`AppHost` が起動中のほうへ同じイベントで渡す)
+- 数が変わるもの (マクロごとのキー): アプリが自分のデータ フォルダーの `slotsFile` (hub-slots.json) に
+  `{"version":1,"slots":[{"slot":"m.<id>","label":"マクロ「…」を再生 / 停止"}]}` を書き、`HotkeySlots.NotifyHub` で Teal Hub に知らせる。
+  Teal Hub は読み直して設定ページの「マクロごとのショートカット」に並べ、キーが決まっているものだけ登録する。
+  slotsFile から消えた slot は登録しない。動的な slot の初期設定はいつも「なし」
+- 重複の確認 (`DuplicateOf`) は、全アプリの全 slot を対象にする。カードには「ショートカット: Ctrl + Alt + R ほか 4 個」と出す
+- hub-slots.json はバックアップに入れない (Teal Macro が起動するたびに macros.json から作り直すため)
 
 ## Teal Hub の設定ページ (TealHub/AppSettingsPage.cs・HubLink.cs)
 
@@ -359,7 +378,7 @@ GitHub が無料で貸してくれる Windows のマシン (公開リポジト�
    - Teal Hub の「起動と終了」は、シェル スクリプトの代わりに `tests/win/Sleeper.cs` (画面のない眠るだけの exe) を使う
 3. **起動のチェック** (`tools/win/smoke.ps1`) … 各アプリを本当に起動して、画面が出ること・落ちないこと・
    エラーのダイアログが出ないこと・error.log に例外がないことを確かめ、終了の合図で閉じることも確かめる。
-   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip と Teal Pin は `/show` で画面を出す
+   データは空の一時フォルダ (本物の %APPDATA% やスタートアップの登録には触らない)。常駐アプリの Teal Clip・Teal Pin・Teal Macro は `/show` で画面を出す
 4. **アップデートのチェック** (`tools/win/update-test.ps1`) … 前のリリースの zip を展開し、前の版の Teal Hub と Teal Memo を起動しておいて、
    新しい .tealupdate を「前の版に入っている本物の TealUpdater.exe」で当てる (画面の「アップデート」ボタンを自動で押す)。
    バージョン・アプリの一覧・全ファイルのハッシュ・余分なファイルが残っていないこと・アプリが起動し直されることを確かめる。
@@ -509,6 +528,46 @@ Teal Hub の「今日」と検索には出さない (固定はその場の操作
 設定の読み書きと古いファイル・画面・通知領域・apps.json と Hub の登録・.tealupdate)。Windows だけ: `tests/win/PinTarget.cs` (`build.ps1 -Tests` で
 build\PinTarget.exe) のウィンドウを本物の最前面にして、`WS_EX_TOPMOST` が付いた・外れたことを確かめる。
 
+## Teal Macro (1.12.0。`src/Apps/TealMacro/`。名前空間 `TealSuite.Macro`)
+
+クリック・キーの連打と、操作の記録・再生 (マクロ)。**AI・ネットワークを使わない**。入力は `SendInput`、記録は `WH_MOUSE_LL` / `WH_KEYBOARD_LL`
+(自分のプロセスの中のフック。ほかのアプリに DLL を入れない)。
+データは `%APPDATA%\TealSuite\TealMacro\settings.json` (連打の設定・くわしい設定)・`macros.json` (マクロ)・`hub-slots.json` (Teal Hub 向けのマクロごとの slot。毎回作り直す)。
+Teal Hub の「今日」と検索には出さない。バックアップには入る (hub-slots.json を除く)。
+
+ファイルと役割:
+
+- `MacroModel.cs` … 画面と Win32 に関係しない部分。`ClickerSettings` (動作 left/right/middle/double/key・1 秒に 1〜100 回・回数・秒・対象 cursor/points・
+  `TargetPoint` 最大 50・`WindowRelative`・押す時間・ばらつき・開始までの秒)、`MacroStep` (click / move / down / up / wheel / key / keydown / keyup / text / wait、
+  前の待ち `delay`・記録したマウスの道 `path`)、`MacroDef` (名前 40 文字・手順 5000・くり返し (0 = ずっと)・速さ 0.25〜8 倍・`Normalize`)、
+  `MacroStore` (読み書き。壊れたファイルは初期設定で開く)、`KeyText` (Keys ⇔ "Ctrl+Enter")
+- `Recorder.cs` … フックの生のイベント (`RawEvent`) を手順にまとめる (押す + 離す → クリック、近い 2 回 → ダブルクリック、修飾キー + キー → "Ctrl+C"、
+  マウスの動きは間引いて path)。Teal Macro 自身の画面への操作とショートカットは捨てる。修飾キーのオートリピートも捨てる
+- `Runner.cs` … `RunJob` (`ClickJob`・`MacroJob`)。時計は `IRunClock` (`RealClock` は Stopwatch で待つ、テストは `FakeClock`)。`JobThread` で別スレッド
+- `InputApi.cs` … `IInputApi` (`Win32Input` が本物、`FakeInput` はテストと Demo)。`WindowMatch` (ウィンドウに合わせる位置: exe 名とタイトルで探し、クライアント座標で覚える)
+- `Hooks.cs` … `InputHook` (`IHookSource`)。注入された入力 (`LLMHF_INJECTED` / `LLKHF_INJECTED`) は記録しない。動いている間の Esc / 止めるキーを見張る
+- `MacroCore.cs` … 状態 (`CoreState` Idle / Countdown / Clicking / Playing / Recording)、ショートカットの受け口 (`OnHotkey(slot)`)、開始・停止・記録・位置の追加・
+  マクロの追加 / 複製 / 削除 / 名前。画面から独立していてテストで直接動かす (`Synchronous` + `FakeClock`)
+- `MainForm.cs`・`MacroUi.cs`・`MacroDialogs.cs` … 画面 (`ChoiceChips`・`StatusBanner`・`NumBox` (mono で NumericUpDown の文字が出ないため自作)・`StepForm`・`NameForm`・
+  `PickOverlay` (画面全体の薄い幕で位置を選ぶ)・`RunBar` (右下の「実行中」のバー。最前面・フォーカスを取らない))
+- `TrayContext.cs` (`MacroTray`) … 常駐 (初期設定はオン)、通知領域のメニュー、SlotEvents、`--slot=` / `/show` / `/settings` / `/macro` (マクロのタブを開く)
+
+決めたこと:
+
+- **ショートカットの初期設定**: 連打の開始 / 停止 Ctrl + Alt + R (Repeat)、位置を記録 Ctrl + Alt + P (Point)、マクロの記録 Ctrl + Alt + M (Macro)、
+  すべて停止 Ctrl + Alt + Esc。マクロごとは「なし」。Ctrl + Alt + C は避けた (コピー系・Teal Clip の操作と紛らわしい)。Ctrl + Alt + T は Teal Pin
+- **画面はタブ 2 つ** (連打 / マクロ)。連打は ① 何を ② 速さと止めかた ③ どこを の順に上から選ぶだけ。何も変えなければ「マウスのある場所を左クリック 10 回 / 秒・止めるまで」。
+  細かい項目は「▸ くわしい設定」に隠す。上の `StatusBanner` で状態を色 (灰 待機・橙 カウントダウン・ティール 実行中・赤 記録中) と文章で示す
+- **止めかた**: 動いている間は本物の Esc で止まる (フックで見る。設定でオフ可)。Ctrl + Alt + Esc ですべて停止。`RunBar` の「■ 停止」。
+  自分の画面 (RunBar を含む) の上ではクリックしない (止めるボタンを連打で押せなくならないように)
+- **カウントダウン**: ボタンで始めたら連打 3 秒・マクロ 1 秒待つ (マウスを動かす・ウィンドウを選ぶ時間)。ショートカットならすぐ
+- **画面を隠す**: マクロの記録・再生と、ボタンで始めたキーの連打の間は Teal Macro を最小化する (キーが前のウィンドウに届くように)。終われば戻す
+- **記録はいつも新しいマクロ**「マクロ N」(上書きで消さない)。記録が終わったら一覧で選び、すぐ「▶ 再生」できる
+- 位置は物理 px (DPI に依存しない座標で `SendInput` の絶対座標 0〜65535・仮想デスクトップ全体)
+
+テスト: tests/V1120Tests.cs (モデル・記録のまとめ・ClickJob / MacroJob を FakeClock で・MacroCore の状態とショートカット・画面・通知領域・apps.json と Hub の slot・
+.tealupdate)。Windows だけ: 自分のプロセスの TextBox に `SendInput` で文字を打つ・フックが注入された入力を無視する。
+
 ## 1.8.0 の追加機能 (全アプリ)
 
 どれも **ネットワークを使わない** (Teal Hub の更新の確認だけは今までどおり)。新しい保存項目はすべて `EmitDefaultValue = false` で、
@@ -577,14 +636,15 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   V1100IntegrationTests.cs (1.10.0 の連携: Wallet → Plan のカレンダー・設定のオン / オフ・壊れたデータ、「開いて」の頼みごと (Plan・Wallet・Memo・Pass)、
   Pass のサイト名の索引 (秘密が入らない・別の鍵・オフで消す・バックアップに入れない)、Hub の今日・検索・#タグの候補・画面・通知領域の件数、
   Plan の一覧「予定」でタスク用のボタンを隠す)、
-  V1110Tests.cs (Teal Pin。上の「Teal Pin」の節)
+  V1110Tests.cs (Teal Pin。上の「Teal Pin」の節)、
+  V1120Tests.cs (Teal Macro と 2 つ以上のショートカット。上の「Teal Macro」の節)
 - Teal Wallet / Teal Plan の画面確認: `tests/run_tests.sh seed /tmp/seed` で見本データを入れ、
   `SHOT_ARGS="--tab=calendar --cal=week" TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh dist/TealSuite/apps/TealPlan/TealPlan.exe out.png`。
   1.10.0 の README の画像: `--tab=list --list=tasks` (小タスクを開いた一覧)・`--tab=list --list=events` (予定表)・`--tab=today`・`--cal=week|month`・`--tab=stats`。
   Hub の「Teal Plan になりました」は、seed に `TealTasks\` フォルダを足して rename-notices.txt を消し、dist の TealHub.exe を撮る。
   時刻で見た目が変わるので、README の画像は `faketime -f "@2026-10-27 09:20:00"` を前に付けて撮った (seed も同じ時刻で)。
   お知らせのバルーンは起動 5 秒後に出るので、待ち時間は 4 秒にする
-- Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / main:tall (全アプリが入る高さ) / settings:<AppId>) (ビルド方法はファイルの先頭)
+- Hub の画面確認 (一覧・設定画面): `mcs` で tests/hub_shots.cs をビルドし `SHOT_ARGS=settings:TealClip tests/shot.sh build/HubShots.exe out.png` (main / main:tall (全アプリが入る高さ) / main:end (一番下のカードまで送る) / settings:<AppId> / settings:<AppId>:more (高くして下まで送る)) (ビルド方法はファイルの先頭)
   1.10.0 の「今日」と検索: `SHOT_ARGS=today` / `SHOT_ARGS="search:#買い物"` (seed のデータで、faketime も seed と同じ時刻)
 - 1.10.0 の連携の画面: tests/v1100_shots.cs をビルドし (方法はファイルの先頭)、`SHOT_ARGS=plan:month` (Teal Wallet の支払い日つきの月のカレンダー)・
   `SHOT_ARGS=pass:settings` (Teal Pass の設定のダイアログだけ。後ろの一覧は写さない)
@@ -592,6 +652,9 @@ tests/run_tests.sh seed /tmp/seed && TEALSUITE_DATA_DIR=/tmp/seed tests/shot.sh 
   `SHOT_ARGS="hub その他" tests/shot.sh build/V180Shots.exe out.png` (hub / volume / sub / tasks に、押すボタンの文字の先頭を付ける。tasks:bulk は「まとめて追加」)
 - 1.11.0 の Teal Pin の画面: tests/v1110_shots.cs をビルドし (方法はファイルの先頭)、`SHOT_ARGS=list|rules|presets|settings|border`
   (border は枠線とタイトルバーの右クリックの説明用の絵。本物の画面ではない)。Hub の一覧の Teal Pin のカードは hub_shots の `SHOT_ARGS=main:end` (一番下まで送る)
+- 1.12.0 の Teal Macro の画面: tests/v1120_shots.cs をビルドし (方法はファイルの先頭)、`SHOT_ARGS=clicker|points|macro|step|recording`。
+  Hub の Teal Macro のカードと設定ページは hub_shots の `main:end` と `settings:TealMacro:more` (TEALSUITE_DATA_DIR に TealMacro\hub-slots.json と
+  TealHub\app-settings.json の `more` を置いて、マクロごとのショートカットを出す)
 - 設定画面だけの画面確認: `SHOT_ARGS="--startup /settings" tests/shot.sh dist/TealSuite/apps/TealVolume/TealVolume.exe out.png`
 - `MEMOAPP_DATA_DIR` … 以前のメモアプリのデータの場所を差し替える
 - ホットキー・クリップボード監視・Core Audio・DPAPI・SmartScreen・本物のレジストリ / .lnk の読み取り・ログイン時の起動などは mono では確認できない。

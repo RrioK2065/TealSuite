@@ -19,6 +19,32 @@ namespace TealSuite.Common
         [DataMember(Name = "id", Order = 1)] public string Id;
         [DataMember(Name = "hotkey", Order = 2, EmitDefaultValue = false)] public string Hotkey;
         [DataMember(Name = "resident", Order = 3, EmitDefaultValue = false)] public bool? Resident;
+        /// <summary>1.12.0: 2 つめ以降のショートカット (Teal Macro の「位置を記録」「緊急停止」・マクロごとのキーなど)。hotkey は 1 つめ</summary>
+        [DataMember(Name = "more", Order = 4, EmitDefaultValue = false)] public List<SlotPref> More;
+
+        /// <summary>2 つめ以降のショートカットの保存値 ("Ctrl+Alt+P" / "none")。決めていなければ null</summary>
+        public string SlotHotkey(string slot)
+        {
+            if (More == null || string.IsNullOrEmpty(slot)) return null;
+            var m = More.FirstOrDefault(x => x != null && string.Equals(x.Slot, slot, StringComparison.OrdinalIgnoreCase));
+            return m == null ? null : m.Hotkey;
+        }
+
+        public void SetSlotHotkey(string slot, string saved)
+        {
+            if (More == null) More = new List<SlotPref>();
+            More.RemoveAll(x => x == null || string.Equals(x.Slot, slot, StringComparison.OrdinalIgnoreCase));
+            if (saved != null) More.Add(new SlotPref { Slot = slot, Hotkey = saved });
+            if (More.Count == 0) More = null;
+        }
+    }
+
+    /// <summary>1.12.0: ショートカット 1 つぶん (2 つめ以降)。{ "slot": "pick", "hotkey": "Ctrl+Alt+P" }</summary>
+    [DataContract]
+    public class SlotPref
+    {
+        [DataMember(Name = "slot", Order = 1)] public string Slot;
+        [DataMember(Name = "hotkey", Order = 2)] public string Hotkey;
     }
 
     [DataContract]
@@ -109,6 +135,13 @@ namespace TealSuite.Common
         {
             var p = Get(appId);
             return p == null ? null : p.Hotkey;
+        }
+
+        /// <summary>1.12.0: 2 つめ以降のショートカットの保存値。決めていなければ null</summary>
+        public static string HotkeyOf(string appId, string slot)
+        {
+            var p = Get(appId);
+            return p == null ? null : p.SlotHotkey(slot);
         }
 
         /// <summary>

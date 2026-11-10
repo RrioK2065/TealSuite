@@ -403,6 +403,7 @@ namespace TealSuite.Hub
             DragDrop += (s, e) => { var f = DroppedUpdate(e.Data); if (f != null) BeginInvoke((Action)(() => OpenUpdateFile(f))); };
             this.shortcuts.Changed += () => { if (!IsDisposed) RefreshStatus(); };
             if (this.shortcuts.TriggerApp == null) this.shortcuts.TriggerApp = a => TriggerApp(a);
+            if (this.shortcuts.TriggerSlot == null) this.shortcuts.TriggerSlot = (a, slot) => TriggerSlot(a, slot);
 
             KeyPreview = true;
             KeyDown += (s, e) => { if (e.KeyCode == Keys.F5 && !page.Box_Focused()) { LoadManifest(); e.Handled = true; } };
@@ -750,14 +751,15 @@ namespace TealSuite.Hub
             watcher = null;
         }
 
-        /// <summary>見るべきファイルか (各アプリの .json と Teal Pass のサイト名の索引。Teal Hub 自身・Teal Clip・Teal Pin は見ない)</summary>
+        /// <summary>見るべきファイルか (各アプリの .json と Teal Pass のサイト名の索引。Teal Hub 自身・Teal Clip・Teal Pin・Teal Macro は見ない)</summary>
         public static bool IsWatchedFile(string path)
         {
             if (string.IsNullOrEmpty(path)) return false;
             var name = Path.GetFileName(path);
             var dir = Path.GetFileName(Path.GetDirectoryName(path) ?? "");
             if (string.Equals(dir, Program.Id, StringComparison.OrdinalIgnoreCase) || string.Equals(dir, "TealClip", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dir, "TealPin", StringComparison.OrdinalIgnoreCase)) return false;   // 1.11.0: Teal Pin は「今日」・検索に出さない (pinned.json はよく書き換わる)
+                || string.Equals(dir, "TealPin", StringComparison.OrdinalIgnoreCase)    // 1.11.0: Teal Pin は「今日」・検索に出さない (pinned.json はよく書き換わる)
+                || string.Equals(dir, "TealMacro", StringComparison.OrdinalIgnoreCase)) return false;   // 1.12.0: Teal Macro も出さない
             if (string.Equals(name, OpenRequest.FileName, StringComparison.OrdinalIgnoreCase)) return false;
             return name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || string.Equals(name, PassSites.FileName, StringComparison.OrdinalIgnoreCase);
         }
@@ -837,6 +839,10 @@ namespace TealSuite.Hub
             if (slot == null || slot.Current.IsEmpty) parts.Add("ショートカット: なし");
             else if (slot.Error != null || (!slot.Active && !shortcuts.Suspended)) { parts.Add("ショートカット: " + slot.Current.Display + " (使えません)"); color = Theme.Danger; }
             else parts.Add("ショートカット: " + slot.Current.Display);
+            // 1.12.0: 2 つめ以降もあるアプリ (Teal Macro) は「ほか 3 個」
+            var more = shortcuts.ExtrasFor(c.App.Id).Count(x => !x.Current.IsEmpty);
+            if (more > 0) parts[parts.Count - 1] += " ほか " + more + " 個";
+            if (shortcuts.ExtrasFor(c.App.Id).Any(x => !x.Current.IsEmpty && (x.Error != null || (!x.Active && !shortcuts.Suspended)))) color = Theme.Danger;
             bool resident = HubShortcuts.IsResident(c.App);
             parts.Add("常駐: " + (resident ? "オン" : "オフ"));
             var st = StartupOf(c.App);
@@ -1108,6 +1114,26 @@ namespace TealSuite.Hub
             if (card.Busy) return "wait";
             lastLaunch[app.Id] = now;
             return StartOrShow(card, AppPrefs.ShowArg) ? "start" : "error";
+        }
+
+        /// <summary>
+        /// 1.12.0: 2 つめ以降のショートカット (Teal Macro の「位置を記録」「緊急停止」・マクロごとのキー) が押されたとき:
+        ///  起動中なら Hotkey.&lt;slot&gt; イベントで知らせる。起動していなければ --slot=&lt;slot&gt; を付けて起動する (2 秒は 1 回だけ)。
+        ///  起動中なのにイベントに応えない (古いバージョン) ときは何もしない
+        /// </summary>
+        public string TriggerSlot(AppEntry app, string slot)
+        {
+            var card = CardFor(app.Id);
+            if (card == null || !HotkeySlots.ValidSlot(slot)) return "none";
+            if (ctl.SendSlot(app, slot)) return "signal";
+            RefreshStatus();
+            if (card.Pids.Count > 0) return "ignored";
+            DateTime last;
+            var now = Now();
+            if (lastLaunch.TryGetValue(app.Id, out last) && (now - last).TotalMilliseconds < LaunchDebounceMs) return "wait";
+            if (card.Busy) return "wait";
+            lastLaunch[app.Id] = now;
+            return StartOrShow(card, HotkeySlots.StartArgPrefix + slot) ? "start" : "error";
         }
 
         // ---------- アップデート ----------

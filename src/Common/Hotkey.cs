@@ -197,7 +197,7 @@ namespace TealSuite.Common
         static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
 
-        /// <summary>テスト用 (Windows 以外): 登録の結果を差し替える。null を返せば成功、文字列ならその理由で失敗。</summary>
+        /// <summary>テスト用: 登録の結果を差し替える。null を返せば成功、文字列ならその理由で失敗。未設定なら本物の RegisterHotKey (Windows 以外は成功)。</summary>
         public static Func<HotkeySpec, string> FakeRegister;
 
         public event Action Pressed;
@@ -219,11 +219,18 @@ namespace TealSuite.Common
         public string Register(HotkeySpec spec)
         {
             Unregister();
-            if (!AppInfo.IsWindows)
+            // テストが差し替えたときは、Windows でも本物の RegisterHotKey を呼ばない
+            // (Ctrl+Alt+R や Ctrl+Alt+Esc は実行環境が先に取っていて、登録が必ず失敗する)
+            if (FakeRegister != null)
             {
-                var fake = FakeRegister != null ? FakeRegister(spec) : null;
+                var fake = FakeRegister(spec);
                 registered = fake == null;
                 return fake;
+            }
+            if (!AppInfo.IsWindows)
+            {
+                registered = true;
+                return null;
             }
             if (!RegisterHotKey(Handle, HotkeyId, (uint)spec.Mods | MOD_NOREPEAT, (uint)spec.Key))
             {

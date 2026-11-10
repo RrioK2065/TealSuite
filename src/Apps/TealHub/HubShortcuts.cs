@@ -1,6 +1,8 @@
 // Teal Hub (アプリ管理) - 全アプリのショートカットと「常駐」をまとめて扱う (1.6.0)
 //
 //  - 全体ショートカット (RegisterHotKey) を登録するのは Teal Hub だけ。アプリ 1 つにつき 1 つ + Teal Hub 自身
+//    1.12.0: アプリによっては 2 つ以上 (apps.json の shortcuts の 2 つめ以降と slotsFile。HotkeySlots.cs)。
+//    2 つめ以降が押されたら、起動中ならそのアプリの Hotkey.<slot> イベント、起動していなければ --slot=<slot> を付けて起動
 //    押されたら: 起動していなければ --show 付きで起動、起動中ならそのアプリの Hotkey イベントを鳴らす
 //    (Teal Clip は履歴のポップアップ、Teal Volume はミキサー、ほかのアプリは画面を前面へ)
 //  - 値は %APPDATA%\TealSuite\TealHub\app-settings.json (AppPrefs.cs)。変えたらアプリに Reload を知らせる
@@ -33,8 +35,13 @@ namespace TealSuite.Hub
         public HotkeySpec Current { get; internal set; }
         /// <summary>登録できなかった理由 (登録できていれば null)</summary>
         public string Error { get; internal set; }
+        /// <summary>1.12.0: 2 つめ以降のショートカットの名前 ("pick" など)。1 つめ (今までのショートカット) は null</summary>
+        public string Slot;
+        /// <summary>1.12.0: アプリが書いた一覧 (slotsFile) から作ったショートカット (Teal Macro のマクロごとのキー)</summary>
+        public bool Dynamic;
 
         public bool IsSelf { get { return App == null; } }
+        public bool IsExtra { get { return Slot != null; } }
         public bool Active { get { return Owner_.IsActive(this); } }
         /// <summary>「Teal Clip (履歴を呼び出す)」</summary>
         public string Describe() { return AppName + " (" + Label + ")"; }
@@ -66,6 +73,8 @@ namespace TealSuite.Hub
         public Action ToggleHub;
         /// <summary>アプリのショートカット (起動していなければ起動、起動中なら Hotkey イベント)</summary>
         public Action<AppEntry> TriggerApp;
+        /// <summary>1.12.0: 2 つめ以降のショートカット (アプリ, slot)</summary>
+        public Action<AppEntry, string> TriggerSlot;
         /// <summary>ショートカット・常駐が変わったとき</summary>
         public event Action Changed;
         /// <summary>ほかのアプリに Reload を知らせる (テストでは差し替える)。届いたら true</summary>
@@ -79,9 +88,23 @@ namespace TealSuite.Hub
         public int ActiveCount { get { return live.Values.Count(g => g.Active); } }
         public bool IsActive(ShortcutSlot s) { GlobalHotkey g; return live.TryGetValue(s, out g) && g.Active; }
 
+        /// <summary>そのアプリの 1 つめのショートカット</summary>
         public ShortcutSlot For(string appId)
         {
-            return slots.FirstOrDefault(s => string.Equals(s.AppId, appId, StringComparison.OrdinalIgnoreCase));
+            return slots.FirstOrDefault(s => s.Slot == null && string.Equals(s.AppId, appId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>1.12.0: そのアプリの 2 つめ以降のショートカット (slot の名前で)</summary>
+        public ShortcutSlot For(string appId, string slot)
+        {
+            if (slot == null) return For(appId);
+            return slots.FirstOrDefault(s => string.Equals(s.Slot, slot, StringComparison.OrdinalIgnoreCase) && string.Equals(s.AppId, appId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>1.12.0: そのアプリの 2 つめ以降のショートカット (apps.json の順、そのあとに数が変わるもの)</summary>
+        public List<ShortcutSlot> ExtrasFor(string appId)
+        {
+            return slots.Where(s => s.Slot != null && string.Equals(s.AppId, appId, StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
         public static string LabelFor(AppEntry a)
@@ -140,6 +163,37 @@ namespace TealSuite.Hub
                     dirty = true;
                 }
                 list.Add(new ShortcutSlot { Owner_ = this, App = a, AppId = a.Id, AppName = a.Name, Label = LabelFor(a), Default = def, Current = HotkeySpec.FromSaved(p.Hotkey, def) });
+
+                // 1.12.0: 2 つめ以降 (apps.json の shortcuts の 2 つめから) と、数が変わるもの (slotsFile)
+                var extras = new List<ShortcutSlot>();
+                if (a.Shortcuts != null)
+                    foreach (var x in a.Shortcuts.Where(x => x != null).Skip(1))
+                    {
+                        if (!HotkeySlots.ValidSlot(x.Slot) || extras.Any(e => string.Equals(e.Slot, x.Slot, StringComparison.OrdinalIgnoreCase))) continue;
+                        extras.Add(new ShortcutSlot { Owner_ = this, App = a, AppId = a.Id, AppName = a.Name, Slot = x.Slot, Label = string.IsNullOrEmpty(x.Label) ? x.Slot : x.Label, Default = HotkeySpec.FromSaved(x.Default, HotkeySpec.None) });
+                    }
+                if (!string.IsNullOrEmpty(a.SlotsFile))
+                {
+                    var dyn = HotkeySlots.ReadDynamic(a.Id, a.SlotsFile);
+                    foreach (var x in dyn)
+                    {
+                        if (extras.Any(e => string.Equals(e.Slot, x.Slot, StringComparison.OrdinalIgnoreCase))) continue;
+                        extras.Add(new ShortcutSlot { Owner_ = this, App = a, AppId = a.Id, AppName = a.Name, Slot = x.Slot, Label = x.Label, Default = HotkeySpec.None, Dynamic = true });
+                    }
+                    // 消えたもの (削除したマクロ) のキーは忘れる
+                    if (p.More != null && p.More.RemoveAll(m => m == null || !extras.Any(e => string.Equals(e.Slot, m.Slot, StringComparison.OrdinalIgnoreCase))) > 0)
+                    {
+                        if (p.More.Count == 0) p.More = null;
+                        dirty = true;
+                    }
+                }
+                foreach (var e in extras)
+                {
+                    var saved = p.SlotHotkey(e.Slot);
+                    if (saved == null) { saved = e.Default.ToSaved(); p.SetSlotHotkey(e.Slot, saved); dirty = true; }
+                    e.Current = HotkeySpec.FromSaved(saved, e.Default);
+                    list.Add(e);
+                }
             }
             if (dirty)
             {
@@ -191,6 +245,7 @@ namespace TealSuite.Hub
         void OnPressed(ShortcutSlot s)
         {
             if (s.IsSelf) { if (ToggleHub != null) ToggleHub(); }
+            else if (s.Slot != null) { if (TriggerSlot != null && s.App != null) TriggerSlot(s.App, s.Slot); }
             else if (TriggerApp != null && s.App != null) TriggerApp(s.App);
         }
 
@@ -230,7 +285,8 @@ namespace TealSuite.Hub
                 if (suspended) g.Unregister();   // キー入力中 (入力が終われば Resume で戻る)
             }
             var prefs = AppPrefs.Load();
-            prefs.GetOrAdd(s.AppId).Hotkey = spec.ToSaved();
+            if (s.Slot == null) prefs.GetOrAdd(s.AppId).Hotkey = spec.ToSaved();
+            else prefs.GetOrAdd(s.AppId).SetSlotHotkey(s.Slot, spec.ToSaved());
             var saveErr = AppPrefs.TrySave(prefs);
             if (saveErr != null)
             {

@@ -668,9 +668,9 @@ public static class V1110Tests
     {
         var apps = H.Manifest.Load(Path.Combine(dist, "apps.json"));
         var pin = apps.FirstOrDefault(a => a.Id == "TealPin");
-        Check(pin != null && pin.Name == "Teal Pin" && pin.Role == "最前面に固定" && pin.Version == "1.11.0" && pin.Resident && !string.IsNullOrEmpty(pin.ResidentNote), "apps.json に Teal Pin (常駐オンが初期設定)");
+        Check(pin != null && pin.Name == "Teal Pin" && pin.Role == "最前面に固定" && pin.Version == "1.12.0" && pin.Resident && !string.IsNullOrEmpty(pin.ResidentNote), "apps.json に Teal Pin (常駐オンが初期設定)");
         Check(pin != null && pin.Shortcuts != null && pin.Shortcuts.Count == 1 && pin.Shortcuts[0].Default == "Ctrl+Alt+T" && pin.Shortcuts[0].Label.Contains("固定"), "ショートカットは Teal Hub が受け付ける (初期設定 Ctrl+Alt+T)");
-        Check(pin != null && File.Exists(pin.ExePath) && File.Exists(pin.IconPath) && apps.Last().Id == "TealPin", "exe とアイコン (一覧のいちばん後ろ)");
+        Check(pin != null && File.Exists(pin.ExePath) && File.Exists(pin.IconPath) && apps.FindIndex(a => a.Id == "TealPin") == apps.Count - 2, "exe とアイコン (1.12.0 で Teal Macro が後ろに増えた)");
         var keys = apps.Where(a => a.Shortcuts != null).SelectMany(a => a.Shortcuts.Where(s => !string.IsNullOrEmpty(s.Default)).Select(s => s.Default)).ToList();
         Check(keys.Count(k => k == "Ctrl+Alt+T") == 1 && H.HubShortcuts.DefaultHubKey.ToString() != "Ctrl+Alt+T", "ほかのアプリの初期設定と重ならない (" + string.Join(", ", keys) + ")");
         var hk = PC.HotkeySpec.FromSaved("Ctrl+Alt+T", PC.HotkeySpec.None);

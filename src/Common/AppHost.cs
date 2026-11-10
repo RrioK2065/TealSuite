@@ -65,6 +65,15 @@ namespace TealSuite.Common
                 if (StartedAtLogin) { if (mutex != null) mutex.Dispose(); return; }
                 try { if (AppInfo.IsWindows) Native.AllowSetForegroundWindow(-1); } catch { }
                 try { if (SecondInstance != null) SecondInstance(); } catch (Exception ex) { DataStore.Log("second instance: " + ex.Message); }
+                // 1.12.0: 2 つめ以降のショートカット (--slot=xxx) で起動された → 起動中のほうにそのショートカットを知らせる
+                string slotArg = null;
+                try { slotArg = HotkeySlots.StartSlot(Environment.GetCommandLineArgs().Skip(1)); } catch { }
+                if (slotArg != null)
+                {
+                    Signal(AppInfo.SlotEventName(id, slotArg));
+                    if (mutex != null) mutex.Dispose();
+                    return;
+                }
                 // ショートカットで起動された (Teal Hub が起動中と気づかなかった) ときは、ショートカットと同じ動きを頼む
                 if (ShowByHotkey)
                 {

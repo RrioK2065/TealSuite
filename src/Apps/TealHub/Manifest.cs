@@ -28,6 +28,8 @@ namespace TealSuite.Hub
         [DataMember(Name = "resident", Order = 11, EmitDefaultValue = false)] public bool Resident;
         /// <summary>常駐の欄に出す補足 (例: 「お知らせは起動している間だけ出ます」)。常駐オフのときは「注意:」付きで目立たせる。省略可</summary>
         [DataMember(Name = "residentNote", Order = 12, EmitDefaultValue = false)] public string ResidentNote;
+        /// <summary>1.12.0: 数が変わるショートカット (Teal Macro のマクロごとのキー) の一覧を書いたファイル (アプリのデータ フォルダーの中の名前)。省略可</summary>
+        [DataMember(Name = "slotsFile", Order = 13, EmitDefaultValue = false)] public string SlotsFile;
 
         /// <summary>apps.json の場所を基準にした exe の絶対パス</summary>
         [IgnoreDataMember] public string ExePath;

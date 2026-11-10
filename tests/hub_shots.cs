@@ -1,5 +1,5 @@
 // 開発用: Teal Hub の画面をスクリーンショット用に開く (Xvfb 上で tests/shot.sh から使う。配布物には入れない)
-//   mono build/HubShots.exe main|main:tall|main:end|today|search:<文字>|settings:<AppId>   (例: settings:TealClip、search:#買い物。main:tall は全アプリが入る高さで開く。main:end はお知らせを出さずに一覧の下 (Teal Pin) まで送る)
+//   mono build/HubShots.exe main|main:tall|main:end|today|search:<文字>|settings:<AppId>|settings:<AppId>:more   (例: settings:TealClip、search:#買い物。main:tall は全アプリが入る高さで開く。main:end はお知らせを出さずに一覧の下 (Teal Pin) まで送る)
 //   main・main:tall は「アプリ」のタブ、today は「今日」(1.10.0)
 //   アップデートのお知らせ: TEALSUITE_UPDATE_API=tests/fixtures/release-latest.json で main (起動 5 秒後に確認する)
 //   ビルド: I=assets/icons/TealHub; mcs -out:build/HubShots.exe -codepage:utf8 -langversion:5 -win32icon:$I.ico -resource:$I.ico,AppIcon.ico -resource:$I.png,AppIcon.png -r:AM=dist/TealSuite/TealHub.exe -r:System.Windows.Forms.dll -r:System.Drawing.dll tests/hub_shots.cs
@@ -11,7 +11,7 @@ using System.Linq;
 using System.Windows.Forms;
 using C = AM::TealSuite.Common;
 using H = AM::TealSuite.Hub;
-[assembly: System.Reflection.AssemblyVersion("1.11.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.12.0.0")]
 
 static class HubShots
 {
@@ -36,7 +36,7 @@ static class HubShots
             var dir = C.DataStore.DirFor("TealHub");
             Directory.CreateDirectory(dir);
             var sf = Path.Combine(dir, H.HubTray.SettingsFile);
-            if (!File.Exists(sf)) File.WriteAllText(sf, "{\"lastSeenVersion\":\"1.11.0\"}");
+            if (!File.Exists(sf)) File.WriteAllText(sf, "{\"lastSeenVersion\":\"1.12.0\"}");
         }
         var tray = new H.HubTray(new string[0], false);
         tray.Shortcuts.SignalReload = id => true;
@@ -55,7 +55,7 @@ static class HubShots
         }
         if (mode == "main:end")
         {
-            // 1.11.0: 一覧のいちばん下 (Teal Pin のカード) までスクロール (Xvfb の高さ 900 に収める)
+            // 1.12.0: 一覧のいちばん下 (Teal Macro のカード) までスクロール (Xvfb の高さ 900 に収める)
             tray.Window.Height = 890;
             var t = new Timer { Interval = 800 };
             t.Tick += (s, e) =>
@@ -70,7 +70,36 @@ static class HubShots
             };
             t.Start();
         }
-        if (mode.StartsWith("settings:")) tray.Window.ShowSettings(mode.Substring(9));
+        if (mode.StartsWith("settings:"))
+        {
+            // 1.12.0: settings:<AppId>:more は高さを 890 にして、下 (そのほかのショートカット・マクロごとのショートカット) まで送る
+            var id = mode.Substring(9);
+            bool more = id.EndsWith(":more");
+            if (more) { id = id.Substring(0, id.Length - 5); tray.Window.Height = 890; }
+            tray.Window.ShowSettings(id);
+            if (more)
+            {
+                var t = new Timer { Interval = 800 };
+                t.Tick += (s, e) =>
+                {
+                    t.Stop();
+                    var stack = new System.Collections.Generic.Stack<Control>();
+                    stack.Push(tray.Window);
+                    while (stack.Count > 0)
+                    {
+                        var c = stack.Pop();
+                        var sc = c as ScrollableControl;
+                        if (sc != null && sc.AutoScroll && sc.Visible && sc.VerticalScroll.Visible)
+                        {
+                            sc.AutoScrollPosition = new System.Drawing.Point(0, 330);
+                            break;
+                        }
+                        foreach (Control k in c.Controls) stack.Push(k);
+                    }
+                };
+                t.Start();
+            }
+        }
         Application.Run(tray);
     }
 }
