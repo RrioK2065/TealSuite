@@ -11,6 +11,7 @@ alias UP TealUpdater.exe
 alias SUB apps/TealWallet/TealWallet.exe
 alias TASKS apps/TealPlan/TealPlan.exe
 alias PIN apps/TealPin/TealPin.exe
+alias MACRO apps/TealMacro/TealMacro.exe
 ref System.dll
 ref System.Core.dll
 ref System.Xml.dll
@@ -34,4 +35,5 @@ src tests/V190Tests.cs
 src tests/V1100Tests.cs
 src tests/V1100IntegrationTests.cs
 src tests/V1110Tests.cs
+src tests/V1120Tests.cs
 src tests/WinTests.cs

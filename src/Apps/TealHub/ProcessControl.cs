@@ -94,6 +94,17 @@ namespace TealSuite.Hub
             return AppHost.Signal(AppInfo.HotkeyEventName(app.Id));
         }
 
+        /// <summary>テスト用: 2 つめ以降のショートカットを知らせる処理を差し替える (アプリ, slot)</summary>
+        public Func<AppEntry, string, bool> SlotHook;
+
+        /// <summary>1.12.0: 2 つめ以降のショートカットが押されたと知らせる (Hotkey.&lt;slot&gt; イベント)。届いたら true</summary>
+        public bool SendSlot(AppEntry app, string slot)
+        {
+            if (SlotHook != null) return SlotHook(app, slot);
+            try { if (AppInfo.IsWindows) Native.AllowSetForegroundWindow(-1); } catch { }
+            return AppHost.Signal(AppInfo.SlotEventName(app.Id, slot));
+        }
+
         /// <summary>実行中のアプリの画面を前面に出す (アプリの Show イベントを鳴らす)</summary>
         public bool Show(AppEntry app)
         {

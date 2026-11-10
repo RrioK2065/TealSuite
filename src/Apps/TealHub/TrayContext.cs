@@ -52,6 +52,7 @@ namespace TealSuite.Hub
             Window = new MainForm(Shortcuts) { HideOnClose = true };
             Shortcuts.ToggleHub = ToggleFromHotkey;
             Shortcuts.TriggerApp = a => Window.TriggerApp(a);
+            Shortcuts.TriggerSlot = (a, slot) => Window.TriggerSlot(a, slot);
             Shortcuts.Changed += UpdateTrayText;
             Window.DataChanged += UpdateTrayText;
             Window.HideRequested += HideWindow;

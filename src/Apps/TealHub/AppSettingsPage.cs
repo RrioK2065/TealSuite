@@ -249,7 +249,12 @@ namespace TealSuite.Hub
             BuildKeyCard();
             BuildResidentCard();
             BuildStartupCard();
-            foreach (var c in new Control[] { keyCard, residentCard, startupCard }) { c.Margin = new Padding(0, 0, 0, Theme.S(12)); body.Controls.Add(c); }
+            BuildExtraCards();
+            var cardsList = new List<Control> { keyCard };
+            if (extraCard != null) cardsList.Add(extraCard);
+            if (dynCard != null) cardsList.Add(dynCard);
+            cardsList.Add(residentCard); cardsList.Add(startupCard);
+            foreach (var c in cardsList) { c.Margin = new Padding(0, 0, 0, Theme.S(12)); body.Controls.Add(c); }
             FitCards();
             body.ResumeLayout();
             builtOk = true;
@@ -326,6 +331,7 @@ namespace TealSuite.Hub
                 case "TealClip": return "押すと、コピーの履歴をその場に呼び出します (選ぶと貼り付け)。";
                 case "TealVolume": return "押すと、音量ミキサーを開きます (前面にあるときは隠します)。";
                 case "TealPlan": return "押すと、Teal Plan の画面を前面に出します (すぐにひとこと入力でタスクや予定を追加できます)。";
+                case "TealMacro": return "押すと、連打を始めます (もう一度押すと止めます)。設定は Teal Macro の「連打」のタブで。Teal Macro が起動していなければ起動して始めます。";
                 case "TealPin": return "押すと、いま前面にあるウィンドウを最前面に固定します (もう一度押すと外します)。Teal Pin が起動していなければ起動して固定します。";
                 default: return "押すと、" + app.Name + " の画面を前面に出します (前面にあるときは隠します)。";
             }
@@ -384,6 +390,68 @@ namespace TealSuite.Hub
             UpdateButtons();
             BtnBack.Focus();
         }
+
+        // ---------- 1.12.0: 2 つめ以降のショートカット ----------
+
+        StackCard extraCard, dynCard;
+        readonly List<SlotRow> slotRows = new List<SlotRow>();
+        string dynKey;
+        /// <summary>2 つめ以降のショートカットの行 (テスト用)</summary>
+        public IList<SlotRow> SlotRows { get { return slotRows; } }
+        public SlotRow RowFor(string slot) { return slotRows.FirstOrDefault(r => string.Equals(r.SlotName, slot, StringComparison.OrdinalIgnoreCase)); }
+        /// <summary>数が変わるショートカット (マクロごと) が 1 つもないときの案内</summary>
+        public string DynamicEmptyText { get { return dynEmpty == null ? "" : dynEmpty.Text; } }
+        Label dynEmpty;
+
+        static string DynamicTitle(AppEntry a) { return a != null && a.Id == "TealMacro" ? "マクロごとのショートカット" : "項目ごとのショートカット"; }
+
+        void BuildExtraCards()
+        {
+            extraCard = dynCard = null; dynEmpty = null;
+            slotRows.Clear();
+            if (app == null) return;
+            var extras = shortcuts.ExtrasFor(app.Id);
+            var fixedOnes = extras.Where(x => !x.Dynamic).ToList();
+            if (fixedOnes.Count > 0)
+            {
+                extraCard = new StackCard("そのほかのショートカット");
+                for (int i = 0; i < fixedOnes.Count; i++) slotRows.Add(extraCard.Add(new SlotRow(this, shortcuts, fixedOnes[i]), i == 0 ? 0 : 10));
+            }
+            if (!string.IsNullOrEmpty(app.SlotsFile))
+            {
+                dynCard = new StackCard(DynamicTitle(app));
+                var dyn = extras.Where(x => x.Dynamic).ToList();
+                dynKey = string.Join("|", dyn.Select(x => x.Slot + "=" + x.Label));
+                dynEmpty = dynCard.Add(StackCard.Text_(app.Id == "TealMacro"
+                    ? "マクロを保存すると、ここでマクロごとにショートカットを付けられます。押すとそのマクロを再生します (再生中にもう一度押すと止めます)。"
+                    : "項目がまだありません。"));
+                if (dyn.Count > 0)
+                    dynEmpty.Text = app.Id == "TealMacro" ? "押すと、そのマクロを再生します (再生中にもう一度押すと止めます)。初期設定はどれも「なし」です。" : "";
+                for (int i = 0; i < dyn.Count; i++) slotRows.Add(dynCard.Add(new SlotRow(this, shortcuts, dyn[i]), i == 0 ? 8 : 10));
+            }
+        }
+
+        void RefreshExtras()
+        {
+            if (app == null) return;
+            // マクロが増えた・減った (Teal Hub が読み直した) ときは作り直す
+            if (dynCard != null)
+            {
+                var dyn = shortcuts.ExtrasFor(app.Id).Where(x => x.Dynamic).ToList();
+                var key = string.Join("|", dyn.Select(x => x.Slot + "=" + x.Label));
+                if (key != dynKey)
+                {
+                    // 読み直し (LoadManifest) のあとはページごと作り直される。それ以外 (テストなど) はここで作り直す
+                    if (IsHandleCreated && !slotRows.Any(r => r.BoxFocused)) BeginInvoke((Action)(() => { if (!IsDisposed && this.app != null && Visible) ShowFor(this.app); }));
+                    return;
+                }
+            }
+            foreach (var r in slotRows) r.RefreshState();
+            if (extraCard != null) extraCard.PerformLayout();
+            if (dynCard != null) dynCard.PerformLayout();
+        }
+
+        internal void SetOwnerStatus(string text) { owner.SetStatus(text); }
 
         // ---------- 常駐 ----------
 
@@ -520,7 +588,147 @@ namespace TealSuite.Hub
                 }
             }
             finally { updating = false; }
+            RefreshExtras();
             keyCard.PerformLayout(); residentCard.PerformLayout(); startupCard.PerformLayout();
+        }
+    }
+
+    /// <summary>1.12.0: 2 つめ以降のショートカット 1 つぶんの行 (名前・状態・入力欄・登録・解除)</summary>
+    public class SlotRow : Panel
+    {
+        readonly AppSettingsPage page;
+        readonly HubShortcuts shortcuts;
+        ShortcutSlot slot;
+        readonly Label name = new Label(), status = new Label(), message = new Label();
+        public readonly HotkeyBox Box = new HotkeyBox();
+        readonly InputFrame frame;
+        public readonly FlatButton BtnRegister = new FlatButton("登録", ButtonKind.Primary), BtnClear = new FlatButton("解除", ButtonKind.Secondary);
+        public readonly LinkLabel ResetLink = new LinkLabel();
+
+        public string SlotName { get { return slot.Slot; } }
+        public ShortcutSlot Slot_ { get { return slot; } }
+        public string StatusText { get { return status.Text; } }
+        public string MessageText { get { return message.Text; } }
+        public string LabelText { get { return name.Text; } }
+        public bool BoxFocused { get { return !Box.IsDisposed && Box.Focused; } }
+
+        public SlotRow(AppSettingsPage page, HubShortcuts shortcuts, ShortcutSlot slot)
+        {
+            this.page = page; this.shortcuts = shortcuts; this.slot = slot;
+            BackColor = Theme.Surface;
+            name.Font = Theme.Bold; name.ForeColor = Theme.Text; name.AutoSize = false; name.AutoEllipsis = true; name.UseMnemonic = false; name.BackColor = Theme.Surface;
+            name.Text = slot.Label;
+            status.Font = Theme.Small; status.AutoSize = false; status.AutoEllipsis = true; status.UseMnemonic = false; status.BackColor = Theme.Surface; status.TextAlign = ContentAlignment.MiddleRight;
+            message.Font = Theme.Small; message.AutoSize = false; message.UseMnemonic = false; message.BackColor = Theme.Surface;
+            Box.Font = Theme.Body;
+            frame = new InputFrame(Box);
+            BtnRegister.FitWidth(64); BtnClear.FitWidth(64);
+            ResetLink.AutoSize = true; ResetLink.LinkColor = Theme.Accent; ResetLink.ActiveLinkColor = Theme.AccentPressed; ResetLink.Font = Theme.Small;
+            ResetLink.LinkBehavior = LinkBehavior.HoverUnderline; ResetLink.BackColor = Theme.Surface; ResetLink.UseMnemonic = false;
+            Controls.AddRange(new Control[] { name, status, frame, BtnRegister, BtnClear, ResetLink, message });
+            Height = Theme.Bold.Height + Theme.S(6) + Math.Max(frame.Height, Theme.S(Theme.ButtonHeight)) + Theme.S(4) + Theme.Small.Height + Theme.S(4);
+
+            Box.SetValue(slot.Current);
+            Box.Enter += (s, e) => { shortcuts.SuspendAll(); SetMessage("キーを押してください… (Esc で取り消し)", Theme.SubText); };
+            Box.Leave += (s, e) => { shortcuts.ResumeAll(); if (message.Text.StartsWith("キーを押して")) SetMessage("", Theme.SubText); RefreshState(); };
+            Box.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) { Box.SetValue(slot.Current); SetMessage("", Theme.SubText); page.BtnBack.Focus(); } };
+            Box.Captured += (s, e) =>
+            {
+                var v = Box.Value;
+                var why = HotkeySpec.Validate(v);
+                if (why == null && !v.SameAs(slot.Current))
+                {
+                    var dup = shortcuts.DuplicateOf(slot, v);
+                    if (dup != null) why = v.Display + " は " + dup.Describe() + " で使っています。先にそちらを解除するか、別の組み合わせを選んでください。";
+                }
+                if (why != null) { SetMessage(why, Theme.Danger); UpdateButtons(); return; }
+                var caution = HotkeySpec.Caution(v);
+                SetMessage(v.SameAs(slot.Current) ? v.Display + " は登録済みです。" : v.Display + " にします。「登録」を押すと使えるようになります。" + (caution != null ? " " + caution : ""), v.SameAs(slot.Current) ? Theme.SubText : Theme.Accent);
+                UpdateButtons();
+            };
+            BtnRegister.Click += (s, e) => Register();
+            BtnClear.Click += (s, e) => Clear();
+            ResetLink.LinkClicked += (s, e) => ResetToDefault();
+        }
+
+        protected override void OnLayout(LayoutEventArgs e)
+        {
+            base.OnLayout(e);
+            if (frame == null) return;
+            int w = Width, y = 0, gap = Theme.S(8);
+            int sw = Math.Min(Theme.S(260), w / 2);
+            name.SetBounds(0, y, w - sw - gap, Theme.Bold.Height + 2);
+            status.SetBounds(w - sw, y, sw, Theme.Bold.Height + 2);
+            y += Theme.Bold.Height + Theme.S(6);
+            int rh = Math.Max(frame.Height, Theme.S(Theme.ButtonHeight));
+            int fw = Math.Max(Theme.S(140), Math.Min(Theme.S(220), w - BtnRegister.Width - BtnClear.Width - gap * 3 - ResetLink.PreferredWidth));
+            frame.SetBounds(0, y + (rh - frame.Height) / 2, fw, frame.Height);
+            BtnRegister.Location = new Point(frame.Right + gap, y + (rh - BtnRegister.Height) / 2);
+            BtnClear.Location = new Point(BtnRegister.Right + gap, y + (rh - BtnClear.Height) / 2);
+            ResetLink.Location = new Point(BtnClear.Right + gap, y + (rh - ResetLink.PreferredHeight) / 2);
+            y += rh + Theme.S(4);
+            message.SetBounds(0, y, w, Theme.Small.Height + 2);
+        }
+
+        void SetMessage(string text, Color c) { message.ForeColor = c; message.Text = text; }
+
+        void UpdateButtons()
+        {
+            var v = Box.Value;
+            BtnRegister.Enabled = !v.IsEmpty && (!v.SameAs(slot.Current) || slot.Error != null || (!slot.Active && !shortcuts.Suspended));
+            BtnClear.Enabled = !slot.Current.IsEmpty;
+            ResetLink.Text = "初期設定 (" + slot.Default.DisplayOrNone + ") に戻す";
+            ResetLink.Visible = !slot.Default.SameAs(slot.Current);
+        }
+
+        public void RefreshState()
+        {
+            var fresh = shortcuts.For(slot.AppId, slot.Slot);
+            if (fresh != null) slot = fresh;
+            name.Text = slot.Label;
+            if (slot.Current.IsEmpty) { status.ForeColor = Theme.SubText; status.Text = "● なし"; }
+            else if (slot.Error != null) { status.ForeColor = Theme.Danger; status.Text = "● " + slot.Current.Display + " は使えません"; SetTip(slot.Error); }
+            else if (slot.Active || shortcuts.Suspended) { status.ForeColor = Theme.Success; status.Text = "● " + slot.Current.Display + " (有効)"; }
+            else { status.ForeColor = Theme.Danger; status.Text = "● " + slot.Current.Display + " は登録できていません"; }
+            if (slot.Error != null && message.Text.Length == 0) SetMessage(slot.Error, Theme.Danger);
+            if (!Box.Focused && (Box.Value.SameAs(slot.Current) || message.Text.Length == 0 || message.ForeColor == Theme.Success)) Box.SetValue(slot.Current);
+            UpdateButtons();
+            PerformLayout();
+        }
+
+        ToolTip tip;
+        void SetTip(string t) { if (tip == null) tip = new ToolTip(); tip.SetToolTip(status, t); }
+
+        public bool Register()
+        {
+            var v = Box.Value;
+            if (v.IsEmpty) { SetMessage("先に、左の欄でキーの組み合わせを押してください。", Theme.Danger); return false; }
+            var err = slot.Apply(v);
+            if (err != null) { SetMessage(err, Theme.Danger); RefreshState(); return false; }
+            SetMessage(v.Display + " を登録しました。", Theme.Success);
+            page.SetOwnerStatus(slot.AppName + " の「" + slot.Label + "」を " + v.Display + " にしました");
+            RefreshState();
+            return true;
+        }
+
+        public bool Clear()
+        {
+            if (slot.Current.IsEmpty) return true;
+            var old = slot.Current;
+            var err = slot.Apply(HotkeySpec.None);
+            if (err != null) { SetMessage(err, Theme.Danger); return false; }
+            Box.SetValue(HotkeySpec.None);
+            SetMessage(old.Display + " を解除しました (ショートカットなし)。", Theme.SubText);
+            page.SetOwnerStatus(slot.AppName + " の「" + slot.Label + "」のショートカットを解除しました");
+            RefreshState();
+            return true;
+        }
+
+        public bool ResetToDefault()
+        {
+            if (slot.Default.IsEmpty) return Clear();
+            Box.SetValue(slot.Default);
+            return Register();
         }
     }
 }

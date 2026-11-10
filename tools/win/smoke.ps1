@@ -9,6 +9,7 @@
     5. 終了の合図 (Local\TealSuite.<id>.Exit) を送り、-Timeout 秒以内に終わることを確かめる (終わらなければ失敗)
   1 つでも失敗があれば終了コード 1。
     Teal Pin (1.11.0) も apps.json から自動で対象になる (/show で画面を出す)。最前面の本物の確認は SmokeTests の「Windows: 本物の最前面」(build\PinTarget.exe)。
+    Teal Macro (1.12.0) も同じく /show で画面を出す (本物のクリック・キーは送らない)。
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Suite,
@@ -29,6 +30,7 @@ foreach ($a in $manifest.apps) {
     $appArgs = ""
     if ($a.id -eq "TealClip") { $appArgs = "/show" }   # 常駐中はトレイだけなので、画面を出す引数を付ける
     if ($a.id -eq "TealPin") { $appArgs = "/show" }    # 1.11.0: 常駐アプリ。画面を出して起動・終了の合図 (終了で固定をすべて外す) を確かめる
+    if ($a.id -eq "TealMacro") { $appArgs = "/show" }  # 1.12.0: resident app (tray only); show the window. Real input (SendInput/hooks) is covered by SmokeTests "Windows:" checks
     $targets += @{ id = $a.id; exe = $a.exe; args = $appArgs }
 }
 

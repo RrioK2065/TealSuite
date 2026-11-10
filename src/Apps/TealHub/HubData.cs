@@ -59,6 +59,8 @@ namespace TealSuite.Hub
             if (string.Equals(r, "TealPass/site-index.dat", StringComparison.OrdinalIgnoreCase)) return true;
             // 1.11.0: Teal Pin のいま固定中のウィンドウの控え (落ちたときに外すため) は、その時だけのものなので入れない (設定・ルール・プリセットは入れる)
             if (string.Equals(r, "TealPin/pinned.json", StringComparison.OrdinalIgnoreCase)) return true;
+            // 1.12.0: Teal Macro の「マクロごとのショートカットの一覧」は、Teal Macro が起動したときに macros.json から作り直すので入れない (マクロと設定は入れる)
+            if (string.Equals(r, "TealMacro/hub-slots.json", StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
 

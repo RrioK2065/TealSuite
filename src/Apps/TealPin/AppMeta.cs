@@ -7,8 +7,8 @@ using TealSuite.Common;
 [assembly: AssemblyTitle("Teal Pin - 最前面に固定")]
 [assembly: AssemblyDescription("ウィンドウを最前面に固定する")]
 [assembly: AssemblyProduct("TealSuite")]
-[assembly: AssemblyVersion("1.11.0.0")]
-[assembly: AssemblyFileVersion("1.11.0.0")]
+[assembly: AssemblyVersion("1.12.0.0")]
+[assembly: AssemblyFileVersion("1.12.0.0")]
 
 namespace TealSuite.Pin
 {
