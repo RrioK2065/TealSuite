@@ -183,11 +183,11 @@ namespace TealSuite.Macro
             }
         }
 
-        /// <summary>仮想デスクトップに対する 0〜65535 の値 (物理 px から)</summary>
+        /// <summary>仮想デスクトップに対する 0〜65535 の値 (物理 px から)。端の px が 0 と 65535 になる。</summary>
         public static int Normalize(int v, int origin, int size)
         {
             if (size <= 1) return 0;
-            long n = ((long)(v - origin) * 65536 + size - 1) / size;   // 切り上げ (戻すと v の px にぴったり入る)
+            long n = (long)(v - origin) * 65535 / (size - 1);
             return (int)Math.Max(0, Math.Min(65535, n));
         }
 
